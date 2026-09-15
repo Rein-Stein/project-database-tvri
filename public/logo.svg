@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 256" role="img" aria-labelledby="title desc">
+  <title id="title">Logo TVRI</title>
+  <desc id="desc">Logo TVRI berwarna biru dan putih</desc>
+  <circle cx="274" cy="128" r="112" fill="#132f70"/>
+  <text x="112" y="183" fill="#ffffff" font-family="Arial Black, Arial, sans-serif" font-size="152" font-weight="900" letter-spacing="-18" text-anchor="middle">TV</text>
+  <text x="274" y="183" fill="#ffffff" font-family="Arial Black, Arial, sans-serif" font-size="152" font-weight="900" letter-spacing="-15" text-anchor="middle">RI</text>
+</svg>
