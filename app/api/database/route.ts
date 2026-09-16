@@ -175,7 +175,7 @@ export async function PUT(request: Request) {
       for (const history of row.riwayat) await connection.query("INSERT INTO riwayat_siaran (id,narasumber_id,tanggal,waktu,program,jenis_siaran,topik,catatan) VALUES (?,?,?,?,?,?,?,?)", [history.id, row.id, history.tanggal, history.waktu ?? null, history.program, history.jenisSiaran ?? "live", history.topik ?? null, history.catatan ?? null]);
     }
     for (const row of snapshot.jadwal) await connection.query("INSERT INTO jadwal_siaran (id,narasumber_id,tanggal,waktu,program,jenis_siaran,topik,catatan,status,tanggal_baru) VALUES (?,?,?,?,?,?,?,?,?,?)", [row.id, row.narasumberId, row.tanggal, row.waktu ?? null, row.program, row.jenisSiaran ?? "live", row.topik ?? null, row.catatan ?? null, row.status, row.tanggalBaru ?? null]);
-    for (const row of snapshot.log) await connection.query("INSERT INTO log_aktivitas (id,waktu,aktor,aksi,detail) VALUES (?,?,?,?,?)", [row.id, row.waktu, row.aktor, row.aksi, row.detail ?? null]);
+    for (const row of snapshot.log) await connection.query("INSERT INTO log_aktivitas (id,waktu,aktor,aksi,detail) VALUES (?,?,?,?,?)", [row.id, new Date(row.waktu), row.aktor, row.aksi, row.detail ?? null]);
     await connection.commit();
     return NextResponse.json({ ok: true });
   } catch (error) {
