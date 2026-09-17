@@ -26,7 +26,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isHydrated && user) {
-      router.replace(user.role === "admin" ? "/admin" : "/profile");
+      router.replace("/");
     }
   }, [isHydrated, user, router]);
 
@@ -49,7 +49,7 @@ export default function LoginPage() {
       return;
     }
     showToast(result.message, "success");
-    window.location.href = result.user?.role === "operator" ? "/profile" : "/admin";
+    window.location.href = "/";
   };
 
   return (

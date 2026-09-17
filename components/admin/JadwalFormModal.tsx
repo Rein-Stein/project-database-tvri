@@ -107,9 +107,9 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4" onClick={onClose}>
       <div
-        className="surface max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md"
+        className="surface mx-auto my-0 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md sm:my-4"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
@@ -180,7 +180,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
                   ))}
                 </select>
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Tanggal" required>
                   <input type="date" className={inputClass} value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
                 </Field>
@@ -234,14 +234,14 @@ export function JadwalFormModal({ existing, onClose }: Props) {
                 />
               </Field>
             </div>
-            <div className="mt-5 flex justify-end gap-2 border-t border-[var(--border)] pt-4">
-              <button onClick={onClose} className="btn btn-outline">
+            <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-end">
+              <button onClick={onClose} className="btn btn-outline w-full sm:w-auto">
                 Batal
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={saving || !!hasDoubleBooking}
-                className="btn btn-primary"
+                className="btn btn-primary w-full sm:w-auto"
               >
                 {saving ? "Menyimpan..." : existing ? "Simpan Perubahan" : "Buat Jadwal"}
               </button>
