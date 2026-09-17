@@ -64,9 +64,9 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="surface w-full max-w-md p-5 shadow-md" onClick={(e) => e.stopPropagation()}>
+    return (
+    <div className="fixed inset-0 z-[60] flex min-h-full items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+      <div className="modal-scrollbar surface my-4 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md" onClick={(e) => e.stopPropagation()}>
         <header className="mb-4 border-b border-[var(--border)] pb-3">
           <h2 className="text-[14px] font-semibold">Catat Siaran</h2>
           <p className="text-[12px] text-[var(--muted-foreground)]">
@@ -81,7 +81,7 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
         )}
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Tanggal Siaran" required>
               <input type="date" className={inputClass} value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
             </Field>
@@ -123,11 +123,11 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
           </Field>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2 border-t border-[var(--border)] pt-4">
-          <button onClick={onClose} className="btn btn-outline">
+        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-end">
+          <button onClick={onClose} className="btn btn-outline w-full sm:w-auto">
             Batal
           </button>
-          <button onClick={handleSubmit} disabled={saving} className="btn btn-primary">
+          <button onClick={handleSubmit} disabled={saving} className="btn btn-primary w-full sm:w-auto">
             {saving ? "Menyimpan..." : "Simpan Riwayat Siaran"}
           </button>
         </div>
