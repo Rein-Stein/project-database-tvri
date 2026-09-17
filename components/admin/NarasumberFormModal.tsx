@@ -62,85 +62,86 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
     setSaving(false);
     onClose();
   };
-
   return (
-    <div className="fixed inset-0 z-50 flex min-h-full items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="modal-scrollbar surface my-4 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md"
+        className="surface flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-hidden shadow-md"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
+        <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 pb-3 pt-5">
           <h2 className="text-[14px] font-semibold">
             {existing ? "Edit Narasumber" : "Tambah Narasumber"}
           </h2>
         </header>
 
-        {dupWarn && (
-          <div className="mb-3 border border-[var(--warning)] bg-[#fdf6e3] p-3 text-[12px] text-[var(--warning)]">
-            <p className="font-semibold">Narasumber dengan nama ini mungkin sudah terdaftar.</p>
-            <p className="mt-1">Yakin ingin menambahkan sebagai narasumber baru?</p>
-            <div className="mt-2 flex gap-2">
-              <button onClick={() => handleSubmit(true)} className="btn btn-primary !h-7 !px-2 !text-[11px]">
-                Tetap Tambahkan
-              </button>
-              <button onClick={() => setDupWarn(false)} className="btn btn-outline !h-7 !px-2 !text-[11px]">
-                Batalkan
-              </button>
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {dupWarn && (
+            <div className="mb-3 border border-[var(--warning)] bg-[#fdf6e3] p-3 text-[12px] text-[var(--warning)]">
+              <p className="font-semibold">Narasumber dengan nama ini mungkin sudah terdaftar.</p>
+              <p className="mt-1">Yakin ingin menambahkan sebagai narasumber baru?</p>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => handleSubmit(true)} className="btn btn-primary !h-7 !px-2 !text-[11px]">
+                  Tetap Tambahkan
+                </button>
+                <button onClick={() => setDupWarn(false)} className="btn btn-outline !h-7 !px-2 !text-[11px]">
+                  Batalkan
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="space-y-3">
-          <Field label="Nama Lengkap" required>
-            <input
-              className={inputClass}
-              value={nama}
-              onChange={(e) => setNama(e.target.value)}
-              placeholder="Dr. H. Ahmad Subarno"
-              autoFocus
-            />
-          </Field>
-          <Field label="Instansi / Lembaga" required>
-            <input
-              className={inputClass}
-              value={instansi}
-              onChange={(e) => setInstansi(e.target.value)}
-              placeholder="Dinas Kesehatan Kaltim"
-            />
-          </Field>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Jabatan">
+          <div className="space-y-3">
+            <Field label="Nama Lengkap" required>
               <input
                 className={inputClass}
-                value={jabatan}
-                onChange={(e) => setJabatan(e.target.value)}
-                placeholder="Kepala Dinas"
+                value={nama}
+                onChange={(e) => setNama(e.target.value)}
+                placeholder="Dr. H. Ahmad Subarno"
+                autoFocus
               />
             </Field>
-            <Field label="Bidang / Keahlian" required>
+            <Field label="Instansi / Lembaga" required>
               <input
                 className={inputClass}
-                value={bidang}
-                onChange={(e) => setBidang(e.target.value)}
-                placeholder="Kesehatan Masyarakat"
+                value={instansi}
+                onChange={(e) => setInstansi(e.target.value)}
+                placeholder="Dinas Kesehatan Kaltim"
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Jabatan">
+                <input
+                  className={inputClass}
+                  value={jabatan}
+                  onChange={(e) => setJabatan(e.target.value)}
+                  placeholder="Kepala Dinas"
+                />
+              </Field>
+              <Field label="Bidang / Keahlian" required>
+                <input
+                  className={inputClass}
+                  value={bidang}
+                  onChange={(e) => setBidang(e.target.value)}
+                  placeholder="Kesehatan Masyarakat"
+                />
+              </Field>
+            </div>
+            <Field label="No. Telepon / Kontak">
+              <input
+                className={inputClass}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="0812-xxxx-xxxx"
               />
             </Field>
           </div>
-          <Field label="No. Telepon / Kontak">
-            <input
-              className={inputClass}
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="0812-xxxx-xxxx"
-            />
-          </Field>
         </div>
 
-        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-end">
-          <button onClick={onClose} className="btn btn-outline w-full sm:w-auto">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
+          <button onClick={onClose} className="btn btn-outline">
             Batal
           </button>
-          <button onClick={() => handleSubmit(false)} disabled={saving} className="btn btn-primary w-full sm:w-auto">
+          <button onClick={() => handleSubmit(false)} disabled={saving} className="btn btn-primary">
             {saving ? "Menyimpan..." : existing ? "Simpan Perubahan" : "Tambah Narasumber"}
           </button>
         </div>
@@ -148,3 +149,4 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
     </div>
   );
 }
+  
