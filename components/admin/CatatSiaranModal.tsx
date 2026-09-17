@@ -66,7 +66,7 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
 
     return (
     <div className="fixed inset-0 z-[60] flex min-h-full items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
-      <div className="modal-scrollbar surface my-4 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-scrollbar surface my-4 max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md" onClick={(e) => e.stopPropagation()}>
         <header className="mb-4 border-b border-[var(--border)] pb-3">
           <h2 className="text-[14px] font-semibold">Catat Siaran</h2>
           <p className="text-[12px] text-[var(--muted-foreground)]">
