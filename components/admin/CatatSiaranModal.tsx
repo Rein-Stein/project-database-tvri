@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
 import { Field, inputClass, textareaClass } from "@/components/admin/AdminUI";
@@ -30,6 +31,8 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
   const [topik, setTopik] = useState("");
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const last = getLastAppearance(narasumber);
   const status = getNarasumberStatus(last);
@@ -64,9 +67,14 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
     onClose();
   };
 
-    return (
-    <div className="fixed inset-0 z-[60] flex min-h-full items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
-      <div className="modal-scrollbar surface my-4 max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md" onClick={(e) => e.stopPropagation()}>
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="surface mx-auto my-8 max-h-[calc(100vh-4rem)] w-full max-w-md overflow-y-auto p-5 shadow-md"
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="mb-4 border-b border-[var(--border)] pb-3">
           <h2 className="text-[14px] font-semibold">Catat Siaran</h2>
           <p className="text-[12px] text-[var(--muted-foreground)]">
@@ -132,6 +140,7 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
