@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
@@ -36,6 +37,8 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   const [overrideAlasan, setOverrideAlasan] = useState("");
   const [showOverride, setShowOverride] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const selectedNarasumber = narasumberList.find((n) => n.id === narasumberId);
   const last = selectedNarasumber ? getLastAppearance(selectedNarasumber) : null;
@@ -106,10 +109,12 @@ export function JadwalFormModal({ existing, onClose }: Props) {
     doSave(false);
   };
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/40 p-4" onClick={onClose}>
       <div
-        className="modal-scrollbar surface mx-auto my-8 max-h-[calc(100vh-4rem)] w-full max-w-md overflow-y-auto p-5 shadow-md"
+        className="surface mx-auto my-8 max-h-[calc(100vh-4rem)] w-full max-w-md overflow-y-auto p-5 shadow-md"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
@@ -249,6 +254,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
