@@ -49,7 +49,7 @@ export default function LoginPage() {
       return;
     }
     showToast(result.message, "success");
-    router.push(result.user?.role === "operator" ? "/profile" : "/admin");
+    window.location.href = result.user?.role === "operator" ? "/profile" : "/admin";
   };
 
   return (
