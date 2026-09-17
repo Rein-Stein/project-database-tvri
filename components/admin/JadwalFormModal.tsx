@@ -107,9 +107,9 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex min-h-full items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
       <div
-        className="surface mx-auto my-0 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md sm:my-4"
+        className="modal-scrollbar surface my-4 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-5 shadow-md"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">

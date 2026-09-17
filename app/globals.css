@@ -283,4 +283,18 @@
   .scrollbar-hide {
     scrollbar-width: none;
   }
+  .modal-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .modal-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+  .modal-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .modal-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+  }
 }
