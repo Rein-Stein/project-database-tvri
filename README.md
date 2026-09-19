@@ -76,9 +76,20 @@ Setiap narasumber dibatasi maksimal **1 kali tampil setiap 3 bulan kalender** (b
 3. Salin `.env.example` menjadi `.env.local`.
 4. Sesuaikan `DB_USER`, `DB_PASSWORD`, dan `DB_NAME` bila diperlukan.
 5. Untuk Aiven MySQL, gunakan `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_NAME=tvri_kaltim`, dan `DB_SSL=REQUIRED`; isi `DB_PASSWORD` hanya melalui environment.
-6. Isi juga `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, dan `SESSION_SECRET` (lihat bagian "Ganti Password Admin").
+6. Isi juga `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, dan `SESSION_SECRET` (lihat bagian "Ganti Password Admin"). Untuk login akun inti/manajemen user, isi `ACCOUNT_MANAGEMENT_EMAIL` dan `ACCOUNT_MANAGEMENT_PASSWORD_HASH`.
 
-Jika MySQL belum tersedia, aplikasi tetap berjalan memakai localStorage sebagai fallback. Jika MySQL aktif dan schema sudah diimpor, data disinkronkan melalui API `/api/database` (hanya admin yang login yang boleh menulis; membaca tetap terbuka untuk pengunjung).
+Jika MySQL belum tersedia, mode development boleh memakai localStorage/seed sebagai fallback. Production tidak menampilkan dummy data ketika database gagal dimuat. Jika MySQL aktif dan schema sudah diimpor, data dibaca melalui API `/api/database`; hanya operasi tulis yang memerlukan admin.
+
+### Environment wajib di Vercel
+
+Set environment variables berikut pada project Vercel, tanpa menuliskan nilainya ke repository:
+
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL=REQUIRED`
+- `SESSION_SECRET` dengan nilai acak yang panjang
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_NAME`
+- `ACCOUNT_MANAGEMENT_EMAIL`, `ACCOUNT_MANAGEMENT_PASSWORD_HASH` bila fitur manajemen user digunakan
+
+`NEXT_PUBLIC_ADMIN_WHATSAPP` bersifat opsional. `.env.local` tetap diabaikan oleh Git melalui `.gitignore`.
 
 ## Ganti Password Admin
 
@@ -108,11 +119,11 @@ Password admin **tidak** ditulis di kode — disimpan sebagai hash di `.env.loca
 - **Framework:** Next.js 14 (App Router)
 - **UI:** React 18, Tailwind CSS, Framer Motion, Lucide React
 - **Bahasa:** TypeScript
-- **State Management:** React Context + localStorage
-- **Storage:** localStorage (data persist di browser)
+- **State Management:** React Context
+- **Storage:** MySQL Aiven sebagai source of truth; localStorage hanya fallback development/preferensi UI
 
 ## Catatan
 
-- Data aplikasi saat ini disimpan di localStorage browser — belum menggunakan backend/database bersama.
-- Gunakan tombol "Muat Data Contoh" di dashboard admin untuk mengisi data sampel.
+- Data aplikasi production dibaca dari database melalui `/api/database`.
+- Gunakan tombol "Muat Data Contoh" di dashboard admin hanya untuk development/testing.
 - Project ini dibuat untuk keperluan perkuliahan.

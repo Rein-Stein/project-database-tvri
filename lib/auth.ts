@@ -17,12 +17,16 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 if (!SESSION_SECRET && process.env.NODE_ENV === "production") {
   // Jangan biarkan aplikasi jalan di production tanpa secret sungguhan.
   console.error(
-    "PERINGATAN: SESSION_SECRET belum diatur di .env.local. " +
-      "Set nilai acak yang panjang sebelum deploy ke production."
+    "PERINGATAN: SESSION_SECRET belum diatur di environment production. " +
+      "Set nilai acak yang panjang sebelum deploy."
   );
 }
 
 const EFFECTIVE_SECRET = SESSION_SECRET || "dev-only-insecure-secret-jangan-dipakai-production";
+
+export function isSessionSecretConfigured(): boolean {
+  return Boolean(SESSION_SECRET);
+}
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");

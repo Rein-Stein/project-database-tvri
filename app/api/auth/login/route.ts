@@ -7,6 +7,7 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
   CORE_ACCOUNT_ID,
+  isSessionSecretConfigured,
 } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,13 @@ function tooManyAttempts(key: string): boolean {
 }
 
 export async function POST(request: Request) {
+  if (process.env.NODE_ENV === "production" && !isSessionSecretConfigured()) {
+    return NextResponse.json(
+      { ok: false, message: "Login belum dikonfigurasi: SESSION_SECRET wajib diatur di environment server." },
+      { status: 503 }
+    );
+  }
+
   let body: { email?: unknown; password?: unknown };
   try {
     body = await request.json();

@@ -75,11 +75,6 @@ function mapLog(rows: RowDataPacket[]): DatabaseSnapshot["log"] {
 
 export async function GET() {
   if (!configured()) return NextResponse.json({ configured: false }, { status: 503 });
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-  const session = verifySessionToken(token);
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   try {
     const [narasumberRows] = await pool.query<RowDataPacket[]>("SELECT * FROM narasumber ORDER BY nama");

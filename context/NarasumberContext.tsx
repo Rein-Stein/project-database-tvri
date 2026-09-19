@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   JadwalSiaran,
@@ -16,6 +16,7 @@ interface NarasumberContextValue {
   narasumberList: Narasumber[];
   jadwalList: JadwalSiaran[];
   logList: LogAktivitas[];
+  databaseStatus: "loading" | "ready" | "fallback" | "error";
   addNarasumber: (data: Omit<Narasumber, "id" | "riwayat" | "lastAppearance">) => Narasumber;
   updateNarasumber: (id: string, patch: Partial<Narasumber>) => void;
   removeNarasumber: (id: string) => void;
@@ -232,6 +233,8 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
   const [logList, setLogList] = useState<LogAktivitas[]>([]);
   const [actor, setActor] = useState("Admin");
   const [databaseReady, setDatabaseReady] = useState(false);
+  const [databaseStatus, setDatabaseStatus] = useState<"loading" | "ready" | "fallback" | "error">("loading");
+  const initialDatabaseLoad = useRef(true);
   const [waitingPeriod, setWaitingPeriod] = useState<WaitingPeriodSetting>(getCurrentWaitingPeriodSetting());
 
   // Muat masa tunggu aktif dari MySQL (bukan localStorage). Semua halaman
@@ -319,67 +322,44 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = recompute(migrate(JSON.parse(raw)));
-        // Jika data lama kosong tanpa riwayat sama sekali, gunakan sample data
-        const totalRiwayat = parsed.reduce((acc, n) => acc + (n.riwayat?.length || 0), 0);
-        if (parsed.length <= 3 && totalRiwayat === 0) {
-          const sampleRecomputed = recompute(SEED_NARASUMBER);
-          setList(sampleRecomputed);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(sampleRecomputed));
-        } else {
-          setList(parsed);
-        }
-      } else {
-        const sampleRecomputed = recompute(SEED_NARASUMBER);
-        setList(sampleRecomputed);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sampleRecomputed));
-      }
-    } catch {
-      setList(recompute(SEED_NARASUMBER));
-    }
-
-    const loadedJadwal = load<JadwalSiaran[]>(JADWAL_KEY, []);
-    if (loadedJadwal.length === 0) {
-      setJadwalList(SEED_JADWAL);
-      localStorage.setItem(JADWAL_KEY, JSON.stringify(SEED_JADWAL));
-    } else {
-      setJadwalList(loadedJadwal.map((j) => ({ ...j, jenisSiaran: j.jenisSiaran ?? "live" })));
-    }
-
-    const loadedLog = load<LogAktivitas[]>(LOG_KEY, []);
-    if (loadedLog.length === 0) {
-      setLogList(SEED_LOG);
-      localStorage.setItem(LOG_KEY, JSON.stringify(SEED_LOG));
-    } else {
-      setLogList(loadedLog);
-    }
-
-    try {
-      const u = JSON.parse(localStorage.getItem("tvri-kaltim-user") || "null");
-      if (u?.name) setActor(u.name);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
+    const initialize = async () => {
+      try {
+        const snapshot = await loadDatabaseSnapshot();
+        if (cancelled || !snapshot) throw new Error("Snapshot database kosong.");
+        setList(recompute(snapshot.narasumber));
+        setJadwalList(snapshot.jadwal.map((j) => ({ ...j, jenisSiaran: j.jenisSiaran ?? "live" })));
+        setLogList(snapshot.log);
+        setDatabaseReady(true);
+        setDatabaseStatus("ready");
+        initialDatabaseLoad.current = true;
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Database tidak dapat dimuat:", error);
+        setDatabaseReady(false);
+        setDatabaseStatus(process.env.NODE_ENV === "development" ? "fallback" : "error");
 
-    loadDatabaseSnapshot()
-      .then((snapshot) => {
-        if (cancelled || !snapshot) return;
-        const hasData = snapshot.narasumber.length > 0 || snapshot.jadwal.length > 0 || snapshot.log.length > 0;
-        if (hasData) {
-          setList(recompute(snapshot.narasumber));
-          setJadwalList(snapshot.jadwal);
-          setLogList(snapshot.log);
+        if (process.env.NODE_ENV === "development") {
+          const loadedNarasumber = migrate(load<Narasumber[]>(STORAGE_KEY, []));
+          const loadedJadwal = load<JadwalSiaran[]>(JADWAL_KEY, []);
+          const loadedLog = load<LogAktivitas[]>(LOG_KEY, []);
+          setList(recompute(loadedNarasumber.length > 0 ? loadedNarasumber : SEED_NARASUMBER));
+          setJadwalList((loadedJadwal.length > 0 ? loadedJadwal : SEED_JADWAL).map((j) => ({ ...j, jenisSiaran: j.jenisSiaran ?? "live" })));
+          setLogList(loadedLog.length > 0 ? loadedLog : SEED_LOG);
+        } else {
+          setList([]);
+          setJadwalList([]);
+          setLogList([]);
         }
-        if (!cancelled) setDatabaseReady(true);
-      })
-      .catch((error) => {
-        console.error("Supabase tidak dapat dimuat, memakai localStorage:", error);
-      })
+
+        try {
+          const u = JSON.parse(localStorage.getItem("tvri-kaltim-user") || "null");
+          if (u?.name) setActor(u.name);
+        } catch {}
+      }
+    };
+
+    void initialize();
 
     return () => {
       cancelled = true;
@@ -387,9 +367,13 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!databaseReady || list.length === 0) return;
+    if (!databaseReady) return;
+    if (initialDatabaseLoad.current) {
+      initialDatabaseLoad.current = false;
+      return;
+    }
     syncDatabaseSnapshot({ narasumber: list, jadwal: jadwalList, log: logList }).catch((error) => {
-      console.error("Perubahan belum tersinkron ke Supabase:", error);
+      console.error("Perubahan belum tersinkron ke database:", error);
     });
   }, [databaseReady, list, jadwalList, logList]);
 
@@ -633,6 +617,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
     waitingPeriod,
     jadwalList,
     logList,
+    databaseStatus,
     addNarasumber,
     updateNarasumber,
     removeNarasumber,

@@ -6,6 +6,7 @@ import { ArrowRight, CalendarDays, CheckCircle2, FileText, Hourglass, Radio, Use
 import { useNarasumber } from "@/context/NarasumberContext";
 import { formatDate, formatWaitingPeriod, getCurrentWaitingPeriodSetting, getNarasumberStatus, getRemainingDays } from "@/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DatabaseStatus } from "@/components/DatabaseStatus";
 
 export default function HomePage() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen">
+      <DatabaseStatus />
       <section
         className="home-hero relative min-h-[520px] overflow-hidden border-b border-[#0d376e] bg-[#0b3b82] bg-cover bg-center"
         style={{ backgroundImage: "url('/beranda2_bg.png')" }}

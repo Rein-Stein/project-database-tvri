@@ -6,6 +6,7 @@ import { Download } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { formatDate } from "@/types";
 import { cn, escapeCsvCell } from "@/lib/utils";
+import { DatabaseStatus } from "@/components/DatabaseStatus";
 
 interface ProgramStat {
   program: string;
@@ -187,6 +188,7 @@ export default function ProgramPage() {
 
   return (
     <div className="photo-page-shell">
+      <DatabaseStatus />
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
       <header className="mb-5 flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

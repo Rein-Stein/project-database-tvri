@@ -14,6 +14,7 @@ import {
 } from "@/types";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DatabaseStatus } from "@/components/DatabaseStatus";
 
 type Filter = "semua" | NarasumberStatus;
 type SortKey = "nama" | "terakhir" | "paling-lama" | "paling-baru";
@@ -86,6 +87,7 @@ export default function NarasumberListPage() {
 
   return (
     <div className="photo-page-shell">
+      <DatabaseStatus />
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
       <header className="page-heading mb-6">
         <p className="section-label">Data utama</p>
