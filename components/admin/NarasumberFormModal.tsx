@@ -5,6 +5,7 @@ import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
 import { Field, inputClass } from "@/components/admin/AdminUI";
 import type { Narasumber } from "@/types";
+import { useAuth } from "@/context/AuthContext";
 
 interface Props {
   existing?: Narasumber | null;
@@ -14,6 +15,7 @@ interface Props {
 
 export function NarasumberFormModal({ existing, existingNames = [], onClose }: Props) {
   const { addNarasumber, updateNarasumber, addLog } = useNarasumber();
+  const { user } = useAuth();
   const { showToast } = useToast();
 
   const [nama, setNama] = useState(existing?.nama ?? "");
@@ -28,7 +30,7 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
     !existing &&
     existingNames.some((n) => n.toLowerCase().trim() === nama.toLowerCase().trim() && nama.trim() !== "");
 
-  const handleSubmit = (force = false) => {
+  const handleSubmit = async (force = false) => {
     if (!nama.trim() || !instansi.trim() || !bidang.trim()) {
       showToast("Nama, Instansi, dan Bidang wajib diisi.", "error");
       return;
@@ -39,6 +41,32 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
     }
     setSaving(true);
     if (existing) {
+      if (user?.role === "operator") {
+        const res = await fetch("/api/change-requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entityType: "narasumber",
+            entityId: existing.id,
+            dataBaru: {
+              nama: nama.trim(),
+              instansi: instansi.trim(),
+              jabatan: jabatan.trim(),
+              bidang: bidang.trim(),
+              phone: phone.trim(),
+            },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        setSaving(false);
+        if (!res.ok) {
+          showToast(data.message ?? "Pengajuan perubahan gagal.", "error");
+          return;
+        }
+        showToast("Perubahan diajukan dan menunggu persetujuan Admin.", "success");
+        onClose();
+        return;
+      }
       updateNarasumber(existing.id, {
         nama: nama.trim(),
         instansi: instansi.trim(),
@@ -142,7 +170,7 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
             Batal
           </button>
           <button onClick={() => handleSubmit(false)} disabled={saving} className="btn btn-primary">
-            {saving ? "Menyimpan..." : existing ? "Simpan Perubahan" : "Tambah Narasumber"}
+            {saving ? "Mengirim..." : existing && user?.role === "operator" ? "Ajukan Perubahan" : existing ? "Simpan Perubahan" : "Tambah Narasumber"}
           </button>
         </div>
       </div>

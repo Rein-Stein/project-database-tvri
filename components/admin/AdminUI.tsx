@@ -12,6 +12,7 @@ const adminNav = [
   { href: "/admin/jadwal", label: "Jadwal Siaran" },
   { href: "/admin/kalender", label: "Kalender" },
   { href: "/admin/laporan", label: "Laporan" },
+  { href: "/admin/persetujuan", label: "Persetujuan Perubahan" },
   { href: "/admin/users/login", label: "Manajemen Akun" },
   { href: "/admin/settings", label: "Pengaturan" },
 ];

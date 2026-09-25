@@ -90,7 +90,7 @@ export function Navbar() {
           ))}
           {user && (
             <Link
-              href="/admin"
+              href={user.role === "operator" ? "/operator" : "/admin"}
               className={linkClass(pathname?.startsWith("/admin") ?? false)}
             >
               Panel Admin
@@ -176,7 +176,7 @@ export function Navbar() {
             ))}
             {user && (
               <Link
-                href="/admin"
+                href={user.role === "operator" ? "/operator" : "/admin"}
                 className="block rounded-xl px-3 py-2.5 text-[14px] font-semibold text-white/75"
               >
                 Panel Admin

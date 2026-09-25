@@ -1,5 +1,32 @@
 export type UserRole = "admin" | "operator";
 
+export type ChangeRequestStatus = "pending" | "approved" | "rejected";
+
+export interface NarasumberChangeData {
+  nama: string;
+  bidang: string;
+  instansi: string;
+  jabatan: string;
+  phone: string;
+}
+
+export interface ChangeRequest {
+  id: string;
+  entityType: "narasumber";
+  entityId: string;
+  operatorId: string;
+  operatorName: string;
+  dataLama: NarasumberChangeData;
+  dataBaru: NarasumberChangeData;
+  status: ChangeRequestStatus;
+  alasanPenolakan?: string;
+  reviewedBy?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UserProfile {
   id: string;
   name: string;

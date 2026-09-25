@@ -73,6 +73,26 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX users_role_idx (role)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS change_requests (
+  id VARCHAR(64) PRIMARY KEY,
+  entity_type VARCHAR(64) NOT NULL,
+  entity_id VARCHAR(64) NOT NULL,
+  operator_id VARCHAR(64) NOT NULL,
+  data_lama JSON NOT NULL,
+  data_baru JSON NOT NULL,
+  status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+  alasan_penolakan TEXT NULL,
+  reviewed_by VARCHAR(64) NULL,
+  reviewed_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT change_request_operator_fk FOREIGN KEY (operator_id) REFERENCES users(id),
+  INDEX change_requests_status_idx (status),
+  INDEX change_requests_entity_idx (entity_type, entity_id),
+  INDEX change_requests_operator_idx (operator_id),
+  INDEX change_requests_created_idx (created_at)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS settings (
   id VARCHAR(64) PRIMARY KEY,
   `key` VARCHAR(120) NOT NULL UNIQUE,
