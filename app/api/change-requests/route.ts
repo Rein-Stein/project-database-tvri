@@ -86,17 +86,24 @@ function dateString(value: unknown): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").slice(0, 10);
 }
 
+function isValidDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function normalizeJadwal(value: unknown): JadwalChangeData | null {
   if (!value || typeof value !== "object") return null;
   const data = value as Record<string, unknown>;
   if (typeof data.narasumberId !== "string" || typeof data.tanggal !== "string" || typeof data.program !== "string") return null;
-  if (!data.narasumberId.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(data.tanggal.trim()) || !data.program.trim()) return null;
+  if (!data.narasumberId.trim() || !isValidDate(data.tanggal.trim()) || !data.program.trim()) return null;
   const status = data.status;
   const jenisSiaran = data.jenisSiaran;
   if (!["dijadwalkan", "sudah-tampil", "dibatalkan", "ditunda"].includes(String(status))) return null;
   if (jenisSiaran !== "live" && jenisSiaran !== "rekaman") return null;
   const optionalFields = ["waktu", "topik", "catatan", "tanggalBaru"] as const;
   if (optionalFields.some((field) => data[field] !== undefined && typeof data[field] !== "string")) return null;
+  if (data.tanggalBaru && !isValidDate(String(data.tanggalBaru))) return null;
   return {
     narasumberId: data.narasumberId.trim(),
     tanggal: data.tanggal.trim(),
@@ -124,8 +131,9 @@ export async function POST(request: Request) {
   const entityType = body.entityType;
   const isCreate = entityType === "narasumber_create";
   const isNarasumberUpdate = entityType === "narasumber" || entityType === "narasumber_update";
+  const isJadwalCreate = entityType === "jadwal_siaran_create";
   const isJadwalUpdate = entityType === "jadwal_siaran_update";
-  if (!isCreate && !isNarasumberUpdate && !isJadwalUpdate) {
+  if (!isCreate && !isNarasumberUpdate && !isJadwalCreate && !isJadwalUpdate) {
     return NextResponse.json({ ok: false, message: "Data entitas tidak valid." }, { status: 400 });
   }
   if (!isCreate && (typeof body.entityId !== "string" || !body.entityId.trim())) {
@@ -135,8 +143,9 @@ export async function POST(request: Request) {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    let entityId = isCreate ? `n${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : String(body.entityId).trim();
-    let storedEntityType: string = isCreate ? "narasumber_create" : isJadwalUpdate ? "jadwal_siaran_update" : "narasumber_update";
+    const isCreateRequest = isCreate || isJadwalCreate;
+    const entityId = isCreateRequest ? `${isCreate ? "n" : "j"}${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : String(body.entityId).trim();
+    const storedEntityType = isCreate ? "narasumber_create" : isJadwalCreate ? "jadwal_siaran_create" : isJadwalUpdate ? "jadwal_siaran_update" : "narasumber_update";
     let dataLama: ChangeRequestData = {};
     let dataBaru: ChangeRequestData;
 
@@ -167,16 +176,24 @@ export async function POST(request: Request) {
         }
       }
     } else {
+      const normalized = normalizeJadwal(body.dataBaru);
+      if (!normalized) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Data jadwal tidak valid." }, { status: 400 });
+      }
+      const [people] = await connection.query<RowDataPacket[]>("SELECT id FROM narasumber WHERE id = ? FOR UPDATE", [normalized.narasumberId]);
+      if (!people.length) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Narasumber jadwal tidak ditemukan." }, { status: 404 });
+      }
+      if (isJadwalCreate) {
+        dataBaru = normalized;
+      } else {
       const [rows] = await connection.query<RowDataPacket[]>("SELECT * FROM jadwal_siaran WHERE id = ? FOR UPDATE", [entityId]);
       const current = rows[0];
       if (!current) {
         await connection.rollback();
         return NextResponse.json({ ok: false, message: "Jadwal tidak ditemukan." }, { status: 404 });
-      }
-      const normalized = normalizeJadwal(body.dataBaru);
-      if (!normalized) {
-        await connection.rollback();
-        return NextResponse.json({ ok: false, message: "Data jadwal tidak valid." }, { status: 400 });
       }
       dataBaru = normalized;
       dataLama = {
@@ -194,9 +211,10 @@ export async function POST(request: Request) {
         await connection.rollback();
         return NextResponse.json({ ok: false, message: "Tidak ada perubahan yang diajukan." }, { status: 400 });
       }
+      }
     }
 
-    const entityTypes = isJadwalUpdate ? ["jadwal_siaran_update"] : ["narasumber", "narasumber_update"];
+    const entityTypes = isJadwalUpdate ? ["jadwal_siaran_update"] : isJadwalCreate ? ["jadwal_siaran_create"] : ["narasumber", "narasumber_update"];
     const [pending] = await connection.query<RowDataPacket[]>(
       `SELECT id FROM change_requests WHERE entity_type IN (${entityTypes.map(() => "?").join(",")}) AND entity_id = ? AND operator_id = ? AND status = 'pending' LIMIT 1`,
       [...entityTypes, entityId, session.userId]

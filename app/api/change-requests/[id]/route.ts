@@ -25,6 +25,12 @@ function dateString(value: unknown): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").slice(0, 10);
 }
 
+function isValidDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function narasumberData(value: ChangeRequestData): NarasumberChangeData | null {
   const fields = ["nama", "bidang", "instansi", "jabatan", "phone"] as const;
   if (fields.some((field) => typeof value[field] !== "string")) return null;
@@ -39,7 +45,8 @@ function narasumberData(value: ChangeRequestData): NarasumberChangeData | null {
 
 function jadwalData(value: ChangeRequestData): JadwalChangeData | null {
   if (typeof value.narasumberId !== "string" || typeof value.tanggal !== "string" || typeof value.program !== "string") return null;
-  if (typeof value.status !== "string" || typeof value.jenisSiaran !== "string") return null;
+  if (typeof value.status !== "string" || typeof value.jenisSiaran !== "string" || !isValidDate(value.tanggal)) return null;
+  if (value.tanggalBaru && !isValidDate(value.tanggalBaru)) return null;
   return {
     narasumberId: value.narasumberId,
     tanggal: value.tanggal,
@@ -118,6 +125,35 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "Data utama sudah berubah. Pengajuan perlu ditinjau ulang." }, { status: 409 });
         }
+      } else if (change.entity_type === "jadwal_siaran_create") {
+        const data = jadwalData(change.data_baru);
+        if (!data || !["dijadwalkan", "sudah-tampil", "dibatalkan", "ditunda"].includes(data.status) || !["live", "rekaman"].includes(data.jenisSiaran)) {
+          await connection.rollback();
+          return NextResponse.json({ ok: false, message: "Data jadwal pada pengajuan tidak valid." }, { status: 409 });
+        }
+        const [existing] = await connection.query<RowDataPacket[]>("SELECT id FROM jadwal_siaran WHERE id = ? FOR UPDATE", [change.entity_id]);
+        if (existing.length) {
+          await connection.rollback();
+          return NextResponse.json({ ok: false, message: "ID jadwal sudah digunakan. Pengajuan tidak dapat diterapkan." }, { status: 409 });
+        }
+        await connection.query(
+          "INSERT INTO jadwal_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan, status, tanggal_baru) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [change.entity_id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null]
+        );
+        if (data.status === "sudah-tampil") {
+          const historyId = `jadwal-${change.entity_id}`;
+          const [history] = await connection.query<RowDataPacket[]>("SELECT id FROM riwayat_siaran WHERE id = ? FOR UPDATE", [historyId]);
+          if (!history.length) {
+            await connection.query(
+              "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              [historyId, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null]
+            );
+          }
+          await connection.query(
+            "UPDATE narasumber SET last_appearance = (SELECT MAX(tanggal) FROM riwayat_siaran WHERE narasumber_id = ?) WHERE id = ?",
+            [data.narasumberId, data.narasumberId]
+          );
+        }
       } else if (change.entity_type === "jadwal_siaran_update") {
         const data = jadwalData(change.data_baru);
         const old = jadwalData(change.data_lama);
@@ -146,19 +182,18 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           "UPDATE jadwal_siaran SET narasumber_id = ?, tanggal = ?, waktu = ?, program = ?, jenis_siaran = ?, topik = ?, catatan = ?, status = ?, tanggal_baru = ? WHERE id = ?",
           [data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null, change.entity_id]
         );
-        if (old.status === "sudah-tampil" || data.status === "sudah-tampil") {
-          if (data.status === "sudah-tampil") {
+        if (old.status !== "sudah-tampil" && data.status === "sudah-tampil") {
+          const historyId = `jadwal-${change.entity_id}`;
+          const [history] = await connection.query<RowDataPacket[]>("SELECT id FROM riwayat_siaran WHERE id = ? FOR UPDATE", [historyId]);
+          if (!history.length) {
             await connection.query(
-              "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE narasumber_id = VALUES(narasumber_id), tanggal = VALUES(tanggal), waktu = VALUES(waktu), program = VALUES(program), jenis_siaran = VALUES(jenis_siaran), topik = VALUES(topik), catatan = VALUES(catatan)",
-              [`jadwal-${change.entity_id}`, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null]
+              "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              [historyId, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null]
             );
-          } else {
-            await connection.query("DELETE FROM riwayat_siaran WHERE id = ?", [`jadwal-${change.entity_id}`]);
           }
-          const narasumberIds = Array.from(new Set([old.narasumberId, data.narasumberId]));
           await connection.query(
-            `UPDATE narasumber SET last_appearance = (SELECT MAX(tanggal) FROM riwayat_siaran WHERE narasumber_id = narasumber.id) WHERE id IN (${narasumberIds.map(() => "?").join(",")})`,
-            narasumberIds
+            "UPDATE narasumber SET last_appearance = (SELECT MAX(tanggal) FROM riwayat_siaran WHERE narasumber_id = ?) WHERE id = ?",
+            [data.narasumberId, data.narasumberId]
           );
         }
       } else {

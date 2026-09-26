@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pencil, PlusCircle, Search } from "lucide-react";
+import { CalendarCheck, Pencil, PlusCircle, Search } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { OperatorGuard } from "@/components/OperatorGuard";
 import { NarasumberFormModal } from "@/components/admin/NarasumberFormModal";
+import { CatatSiaranModal } from "@/components/admin/CatatSiaranModal";
 import type { Narasumber } from "@/types";
 
 export default function OperatorPage() {
@@ -16,6 +17,7 @@ function OperatorContent() {
   const [query, setQuery] = useState("");
   const [editNarasumber, setEditNarasumber] = useState<Narasumber | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [catatTarget, setCatatTarget] = useState<Narasumber | null>(null);
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     return narasumberList.filter((n) => !q || [n.nama, n.instansi, n.bidang, n.jabatan ?? ""].some((value) => value.toLowerCase().includes(q)));
@@ -43,12 +45,13 @@ function OperatorContent() {
           <tbody>{filtered.map((n) => <tr key={n.id}>
             <td className="font-semibold">{n.nama}<div className="text-[12px] font-normal text-[var(--muted-foreground)]">{n.jabatan || "-"}</div></td>
             <td>{n.bidang}</td><td>{n.instansi}</td>
-            <td className="text-right"><button onClick={() => setEditNarasumber(n)} className="btn btn-outline !h-7 !px-2 !text-[11px]"><Pencil size={12} /> Edit</button></td>
+            <td className="text-right"><div className="flex justify-end gap-1"><button onClick={() => setCatatTarget(n)} className="btn btn-primary !h-7 !px-2 !text-[11px]"><CalendarCheck size={12} /> Catat</button><button onClick={() => setEditNarasumber(n)} className="btn btn-outline !h-7 !px-2 !text-[11px]"><Pencil size={12} /> Edit</button></div></td>
           </tr>)}</tbody>
         </table>
       </div>
       {editNarasumber && <NarasumberFormModal existing={editNarasumber} onClose={() => setEditNarasumber(null)} />}
       {showCreate && <NarasumberFormModal existingNames={narasumberList.map((n) => n.nama)} onClose={() => setShowCreate(false)} />}
+      {catatTarget && <CatatSiaranModal narasumber={catatTarget} onClose={() => setCatatTarget(null)} />}
     </div>
   );
 }

@@ -34,10 +34,11 @@ export default function JadwalPage() {
 }
 
 function JadwalContent() {
-  const { narasumberList, jadwalList, setJadwalStatus, removeJadwal, tandaiJadwalTampil, addLog } =
+  const { narasumberList, jadwalList, setJadwalStatus, removeJadwal, addLog } =
     useNarasumber();
   const { showToast } = useToast();
 
+  const [processingScheduleId, setProcessingScheduleId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [showForm, setShowForm] = useState(false);
@@ -47,6 +48,9 @@ function JadwalContent() {
   const getNama = (id: string) => narasumberList.find((n) => n.id === id)?.nama ?? "-";
   const getInstansi = (id: string) =>
     narasumberList.find((n) => n.id === id)?.instansi ?? "";
+  const hasRecordedHistory = (jadwal: JadwalSiaran) =>
+    narasumberList.some((n) => n.id === jadwal.narasumberId
+      && n.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id));
 
   const filtered = useMemo(() => {
     const today = new Date();
@@ -74,7 +78,7 @@ function JadwalContent() {
       .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
   }, [jadwalList, filterStatus, filterPeriode]);
 
-  const handleTandaiTampil = (j: JadwalSiaran) => {
+  const handleTandaiTampil = async (j: JadwalSiaran) => {
     const waitingSummary = "periode jeda yang diatur admin";
     if (
       !confirm(
@@ -82,9 +86,22 @@ function JadwalContent() {
       )
     )
       return;
-    tandaiJadwalTampil(j.id);
-    addLog(`Tandai sudah tampil: ${getNama(j.narasumberId)}`, `Jadwal: ${j.id}, Tanggal: ${formatDate(j.tanggal)}`);
-    showToast(`${getNama(j.narasumberId)} ditandai sudah tampil. Masa tunggu baru dimulai.`, "success");
+    setProcessingScheduleId(j.id);
+    try {
+      const response = await fetch("/api/siaran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ narasumberId: j.narasumberId, jadwalId: j.id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message ?? "Jadwal gagal dicatat.");
+      showToast(data.alreadyRecorded ? "Siaran ini sudah pernah dicatat." : `${getNama(j.narasumberId)} ditandai sudah tampil. Masa tunggu baru dimulai.`, "success");
+      window.location.reload();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Jadwal gagal dicatat.", "error");
+    } finally {
+      setProcessingScheduleId(null);
+    }
   };
 
   const handleBatalkan = (j: JadwalSiaran) => {
@@ -265,6 +282,7 @@ function JadwalContent() {
                   </td>
                   <td className="text-[var(--muted-foreground)]">{j.topik || "-"}</td>                  <td>
                     <JadwalBadge status={j.status} />
+                    {hasRecordedHistory(j) && <div className="mt-1 text-[11px] font-medium text-[var(--success)]">Siaran sudah dicatat</div>}
                   </td>
                   <td className="text-right">
                     <div className="flex flex-wrap justify-end gap-1">
@@ -272,6 +290,7 @@ function JadwalContent() {
                         <>
                           <button
                             onClick={() => handleTandaiTampil(j)}
+                            disabled={processingScheduleId === j.id}
                             title="Tandai Sudah Tampil"
                             className="btn btn-primary !h-7 !px-2 !text-[11px]"
                           >

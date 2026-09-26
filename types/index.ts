@@ -22,7 +22,7 @@ export interface JadwalChangeData {
   tanggalBaru: string;
 }
 
-export type ChangeRequestEntityType = "narasumber" | "narasumber_create" | "narasumber_update" | "jadwal_siaran_update";
+export type ChangeRequestEntityType = "narasumber" | "narasumber_create" | "narasumber_update" | "jadwal_siaran_create" | "jadwal_siaran_update";
 export type ChangeRequestData = Partial<NarasumberChangeData & JadwalChangeData>;
 
 export interface ChangeRequest {
@@ -104,6 +104,8 @@ export const JENIS_SIARAN_LABEL: Record<JenisSiaran, string> = {
 /** Satu record riwayat siaran. Riwayat LAMA TIDAK ditimpa — setiap siaran = record baru. */
 export interface RiwayatSiaran {
   id: string;
+  /** Jadwal sumber jika riwayat berasal dari siaran yang terjadwal. */
+  jadwalId?: string;
   /** ISO date string (YYYY-MM-DD) */
   tanggal: string;
   /** HH:mm, opsional */

@@ -23,6 +23,7 @@ function mapRiwayat(rows: RowDataPacket[]): Map<string, DatabaseSnapshot["narasu
     const list = histories.get(row.narasumber_id) ?? [];
     list.push({
       id: row.id,
+      ...(typeof row.id === "string" && row.id.startsWith("jadwal-") ? { jadwalId: row.id.slice("jadwal-".length) } : {}),
       tanggal: toISODate(row.tanggal),
       waktu: row.waktu,
       program: row.program,

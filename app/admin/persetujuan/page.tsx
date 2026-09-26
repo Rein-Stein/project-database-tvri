@@ -14,6 +14,7 @@ const jadwalFields = [["narasumberId", "Narasumber"], ["tanggal", "Tanggal"], ["
 
 function requestTypeLabel(entityType: ChangeRequest["entityType"]): string {
   if (entityType === "narasumber_create") return "Tambah Narasumber";
+  if (entityType === "jadwal_siaran_create") return "Tambah Jadwal & Catat Siaran";
   if (entityType === "jadwal_siaran_update") return "Edit Jadwal";
   return "Edit Narasumber";
 }
@@ -107,7 +108,7 @@ function ApprovalContent() {
     <AdminSubNav />
     {loading ? <div className="surface p-6 text-[13px] text-[var(--muted-foreground)]">Memuat pengajuan...</div> : requests.length === 0 ? <div className="surface p-8 text-center text-[13px] text-[var(--muted-foreground)]">Belum ada riwayat pengajuan.</div> : <div className="space-y-4">
       {requests.map((request) => {
-        const jadwalRequest = request.entityType === "jadwal_siaran_update";
+        const jadwalRequest = request.entityType === "jadwal_siaran_update" || request.entityType === "jadwal_siaran_create";
         const fields: ReadonlyArray<readonly [string, string]> = jadwalRequest ? jadwalFields : narasumberFields;
         const oldData = request.dataLama as Record<string, string | undefined>;
         const newData = request.dataBaru as Record<string, string | undefined>;

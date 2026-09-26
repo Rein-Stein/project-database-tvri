@@ -47,7 +47,7 @@ function OperatorJadwalContent() {
             <td className="whitespace-nowrap">{formatDate(jadwal.tanggal)}{jadwal.waktu ? <div className="text-[12px] text-[var(--muted-foreground)]">{jadwal.waktu} WITA</div> : null}</td>
             <td className="font-semibold">{narasumber?.nama ?? "-"}</td>
             <td>{jadwal.program}{jadwal.topik ? <div className="text-[12px] text-[var(--muted-foreground)]">{jadwal.topik}</div> : null}</td>
-            <td>{JADWAL_LABEL[jadwal.status]}</td>
+            <td>{JADWAL_LABEL[jadwal.status]}{narasumber?.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id) && <div className="mt-1 text-[11px] font-medium text-[var(--success)]">Siaran sudah dicatat</div>}</td>
             <td className="text-right"><button onClick={() => setEditJadwal(jadwal)} className="btn btn-outline !h-7 !px-2 !text-[11px]"><Pencil size={12} /> Edit</button></td>
           </tr>;
         })}</tbody>

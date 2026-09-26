@@ -9,6 +9,7 @@ const statusLabel = { pending: "Menunggu Persetujuan", approved: "Disetujui", re
 
 function requestTypeLabel(entityType: ChangeRequest["entityType"]): string {
   if (entityType === "narasumber_create") return "Tambah Narasumber";
+  if (entityType === "jadwal_siaran_create") return "Tambah Jadwal & Catat Siaran";
   if (entityType === "jadwal_siaran_update") return "Edit Jadwal";
   return "Edit Narasumber";
 }
@@ -35,7 +36,7 @@ function RequestsContent() {
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4"><div><p className="section-label">Area operator</p><h1 className="mt-2 text-[20px] font-semibold">Riwayat Pengajuan</h1></div><div className="flex gap-2"><a href="/operator" className="btn btn-outline">Data Narasumber</a><a href="/operator/jadwal" className="btn btn-outline">Jadwal</a></div></div>
     {error && <div className="mb-4 border border-[var(--danger)] bg-[var(--danger-muted)] px-3 py-2 text-[12px] text-[var(--danger)]">{error}</div>}
     {requests.length === 0 ? <div className="surface p-8 text-center text-[13px] text-[var(--muted-foreground)]">Belum ada pengajuan perubahan.</div> : <div className="space-y-3">{requests.map((request) => {
-      const jadwalRequest = request.entityType === "jadwal_siaran_update";
+      const jadwalRequest = request.entityType === "jadwal_siaran_update" || request.entityType === "jadwal_siaran_create";
       const oldData = request.dataLama as Record<string, string | undefined>;
       const newData = request.dataBaru as Record<string, string | undefined>;
       const fields = jadwalRequest
