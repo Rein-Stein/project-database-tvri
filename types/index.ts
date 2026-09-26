@@ -10,14 +10,29 @@ export interface NarasumberChangeData {
   phone: string;
 }
 
+export interface JadwalChangeData {
+  narasumberId: string;
+  tanggal: string;
+  waktu: string;
+  program: string;
+  jenisSiaran: JenisSiaran;
+  topik: string;
+  catatan: string;
+  status: JadwalStatus;
+  tanggalBaru: string;
+}
+
+export type ChangeRequestEntityType = "narasumber" | "narasumber_create" | "narasumber_update" | "jadwal_siaran_update";
+export type ChangeRequestData = Partial<NarasumberChangeData & JadwalChangeData>;
+
 export interface ChangeRequest {
   id: string;
-  entityType: "narasumber";
+  entityType: ChangeRequestEntityType;
   entityId: string;
   operatorId: string;
   operatorName: string;
-  dataLama: NarasumberChangeData;
-  dataBaru: NarasumberChangeData;
+  dataLama: ChangeRequestData;
+  dataBaru: ChangeRequestData;
   status: ChangeRequestStatus;
   alasanPenolakan?: string;
   reviewedBy?: string;

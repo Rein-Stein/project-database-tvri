@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
-import type { NarasumberChangeData } from "@/types";
+import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +13,8 @@ interface ChangeRequestRow extends RowDataPacket {
   entity_id: string;
   operator_id: string;
   operator_name: string;
-  data_lama: NarasumberChangeData;
-  data_baru: NarasumberChangeData;
+  data_lama: ChangeRequestData;
+  data_baru: ChangeRequestData;
   status: "pending" | "approved" | "rejected";
   alasan_penolakan: string | null;
   reviewed_by: string | null;
@@ -74,12 +74,40 @@ export async function GET() {
   }
 }
 
-function normalizeData(value: unknown): NarasumberChangeData | null {
+function normalizeNarasumber(value: unknown): NarasumberChangeData | null {
   if (!value || typeof value !== "object") return null;
   const data = value as Record<string, unknown>;
   const fields = ["nama", "bidang", "instansi", "jabatan", "phone"] as const;
   if (fields.some((field) => typeof data[field] !== "string")) return null;
   return Object.fromEntries(fields.map((field) => [field, (data[field] as string).trim()])) as unknown as NarasumberChangeData;
+}
+
+function dateString(value: unknown): string {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").slice(0, 10);
+}
+
+function normalizeJadwal(value: unknown): JadwalChangeData | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Record<string, unknown>;
+  if (typeof data.narasumberId !== "string" || typeof data.tanggal !== "string" || typeof data.program !== "string") return null;
+  if (!data.narasumberId.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(data.tanggal.trim()) || !data.program.trim()) return null;
+  const status = data.status;
+  const jenisSiaran = data.jenisSiaran;
+  if (!["dijadwalkan", "sudah-tampil", "dibatalkan", "ditunda"].includes(String(status))) return null;
+  if (jenisSiaran !== "live" && jenisSiaran !== "rekaman") return null;
+  const optionalFields = ["waktu", "topik", "catatan", "tanggalBaru"] as const;
+  if (optionalFields.some((field) => data[field] !== undefined && typeof data[field] !== "string")) return null;
+  return {
+    narasumberId: data.narasumberId.trim(),
+    tanggal: data.tanggal.trim(),
+    waktu: String(data.waktu ?? "").trim(),
+    program: data.program.trim(),
+    jenisSiaran,
+    topik: String(data.topik ?? "").trim(),
+    catatan: String(data.catatan ?? "").trim(),
+    status: status as JadwalChangeData["status"],
+    tanggalBaru: String(data.tanggalBaru ?? "").trim(),
+  };
 }
 
 export async function POST(request: Request) {
@@ -93,39 +121,85 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false, message: "Permintaan tidak valid." }, { status: 400 });
   }
-  if (body.entityType !== "narasumber" || typeof body.entityId !== "string" || !body.entityId.trim()) {
+  const entityType = body.entityType;
+  const isCreate = entityType === "narasumber_create";
+  const isNarasumberUpdate = entityType === "narasumber" || entityType === "narasumber_update";
+  const isJadwalUpdate = entityType === "jadwal_siaran_update";
+  if (!isCreate && !isNarasumberUpdate && !isJadwalUpdate) {
     return NextResponse.json({ ok: false, message: "Data entitas tidak valid." }, { status: 400 });
   }
-  const dataBaru = normalizeData(body.dataBaru);
-  if (!dataBaru || !dataBaru.nama || !dataBaru.bidang || !dataBaru.instansi) {
-    return NextResponse.json({ ok: false, message: "Nama, bidang, dan instansi wajib diisi." }, { status: 400 });
+  if (!isCreate && (typeof body.entityId !== "string" || !body.entityId.trim())) {
+    return NextResponse.json({ ok: false, message: "ID data yang diajukan tidak valid." }, { status: 400 });
   }
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const [rows] = await connection.query<RowDataPacket[]>("SELECT nama, bidang, instansi, jabatan, phone FROM narasumber WHERE id = ? FOR UPDATE", [body.entityId]);
-    const current = rows[0];
-    if (!current) {
-      await connection.rollback();
-      return NextResponse.json({ ok: false, message: "Narasumber tidak ditemukan." }, { status: 404 });
+    let entityId = isCreate ? `n${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : String(body.entityId).trim();
+    let storedEntityType: string = isCreate ? "narasumber_create" : isJadwalUpdate ? "jadwal_siaran_update" : "narasumber_update";
+    let dataLama: ChangeRequestData = {};
+    let dataBaru: ChangeRequestData;
+
+    if (isCreate || isNarasumberUpdate) {
+      const normalized = normalizeNarasumber(body.dataBaru);
+      if (!normalized || !normalized.nama || !normalized.bidang || !normalized.instansi) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Nama, bidang, dan instansi wajib diisi." }, { status: 400 });
+      }
+      dataBaru = normalized;
+      if (isNarasumberUpdate) {
+        const [rows] = await connection.query<RowDataPacket[]>("SELECT nama, bidang, instansi, jabatan, phone FROM narasumber WHERE id = ? FOR UPDATE", [entityId]);
+        const current = rows[0];
+        if (!current) {
+          await connection.rollback();
+          return NextResponse.json({ ok: false, message: "Narasumber tidak ditemukan." }, { status: 404 });
+        }
+        dataLama = {
+          nama: current.nama,
+          bidang: current.bidang,
+          instansi: current.instansi,
+          jabatan: current.jabatan ?? "",
+          phone: current.phone ?? "",
+        };
+        if (JSON.stringify(dataLama) === JSON.stringify(dataBaru)) {
+          await connection.rollback();
+          return NextResponse.json({ ok: false, message: "Tidak ada perubahan yang diajukan." }, { status: 400 });
+        }
+      }
+    } else {
+      const [rows] = await connection.query<RowDataPacket[]>("SELECT * FROM jadwal_siaran WHERE id = ? FOR UPDATE", [entityId]);
+      const current = rows[0];
+      if (!current) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Jadwal tidak ditemukan." }, { status: 404 });
+      }
+      const normalized = normalizeJadwal(body.dataBaru);
+      if (!normalized) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Data jadwal tidak valid." }, { status: 400 });
+      }
+      dataBaru = normalized;
+      dataLama = {
+        narasumberId: current.narasumber_id,
+        tanggal: dateString(current.tanggal),
+        waktu: current.waktu ?? "",
+        program: current.program,
+        jenisSiaran: current.jenis_siaran ?? "live",
+        topik: current.topik ?? "",
+        catatan: current.catatan ?? "",
+        status: current.status,
+        tanggalBaru: current.tanggal_baru ? dateString(current.tanggal_baru) : "",
+      };
+      if (JSON.stringify(dataLama) === JSON.stringify(dataBaru)) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Tidak ada perubahan yang diajukan." }, { status: 400 });
+      }
     }
 
-    const dataLama = normalizeData({
-      nama: current.nama,
-      bidang: current.bidang,
-      instansi: current.instansi,
-      jabatan: current.jabatan ?? "",
-      phone: current.phone ?? "",
-    })!;
-    if (JSON.stringify(dataLama) === JSON.stringify(dataBaru)) {
-      await connection.rollback();
-      return NextResponse.json({ ok: false, message: "Tidak ada perubahan yang diajukan." }, { status: 400 });
-    }
-
+    const entityTypes = isJadwalUpdate ? ["jadwal_siaran_update"] : ["narasumber", "narasumber_update"];
     const [pending] = await connection.query<RowDataPacket[]>(
-      "SELECT id FROM change_requests WHERE entity_type = 'narasumber' AND entity_id = ? AND operator_id = ? AND status = 'pending' LIMIT 1",
-      [body.entityId, session.userId]
+      `SELECT id FROM change_requests WHERE entity_type IN (${entityTypes.map(() => "?").join(",")}) AND entity_id = ? AND operator_id = ? AND status = 'pending' LIMIT 1`,
+      [...entityTypes, entityId, session.userId]
     );
     if (pending.length) {
       await connection.rollback();
@@ -134,8 +208,8 @@ export async function POST(request: Request) {
 
     const id = `cr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await connection.query(
-      "INSERT INTO change_requests (id, entity_type, entity_id, operator_id, data_lama, data_baru, status) VALUES (?, 'narasumber', ?, ?, ?, ?, 'pending')",
-      [id, body.entityId, session.userId, JSON.stringify(dataLama), JSON.stringify(dataBaru)]
+      "INSERT INTO change_requests (id, entity_type, entity_id, operator_id, data_lama, data_baru, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+      [id, storedEntityType, entityId, session.userId, JSON.stringify(dataLama), JSON.stringify(dataBaru)]
     );
     await connection.commit();
     return NextResponse.json({ ok: true, id, message: "Perubahan diajukan dan menunggu persetujuan Admin." }, { status: 201 });

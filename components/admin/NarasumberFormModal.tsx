@@ -40,14 +40,14 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
       return;
     }
     setSaving(true);
-    if (existing) {
-      if (user?.role === "operator") {
+    if (user?.role === "operator") {
+      try {
         const res = await fetch("/api/change-requests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            entityType: "narasumber",
-            entityId: existing.id,
+            entityType: existing ? "narasumber_update" : "narasumber_create",
+            ...(existing ? { entityId: existing.id } : {}),
             dataBaru: {
               nama: nama.trim(),
               instansi: instansi.trim(),
@@ -58,15 +58,21 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
           }),
         });
         const data = await res.json().catch(() => ({}));
-        setSaving(false);
         if (!res.ok) {
           showToast(data.message ?? "Pengajuan perubahan gagal.", "error");
           return;
         }
-        showToast("Perubahan diajukan dan menunggu persetujuan Admin.", "success");
+        showToast(existing ? "Perubahan diajukan dan menunggu persetujuan Admin." : "Narasumber diajukan dan menunggu persetujuan Admin.", "success");
         onClose();
         return;
+      } catch {
+        showToast("Pengajuan gagal dikirim. Periksa koneksi lalu coba lagi.", "error");
+        return;
+      } finally {
+        setSaving(false);
       }
+    }
+    if (existing) {
       updateNarasumber(existing.id, {
         nama: nama.trim(),
         instansi: instansi.trim(),

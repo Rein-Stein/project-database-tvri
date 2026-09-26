@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { RotateCcw, Settings2 } from "lucide-react";
+import { RotateCcw, Settings2, Trash2 } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -29,6 +29,22 @@ export default function AdminDashboardPage() {
 function DashboardContent() {
   const { narasumberList, jadwalList, logList, resetToSampleData, waitingPeriod } = useNarasumber();
   const { showToast } = useToast();
+
+  const deleteActivityLog = async (id?: string) => {
+    const confirmation = id
+      ? "Yakin ingin menghapus log aktivitas ini?"
+      : "Yakin ingin menghapus seluruh log aktivitas?";
+    if (!confirm(confirmation)) return;
+    try {
+      const response = await fetch(id ? `/api/logs/${encodeURIComponent(id)}` : "/api/logs", { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message ?? "Log aktivitas gagal dihapus.");
+      showToast(data.message, "success");
+      window.location.reload();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Log aktivitas gagal dihapus.", "error");
+    }
+  };
 
   const stats = useMemo(() => {
     let tersedia = 0, dalamJeda = 0, belumTampil = 0, totalSiaran = 0;
@@ -365,11 +381,12 @@ function DashboardContent() {
       </div>
 
       <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-[14px] font-semibold">Log Aktivitas & Audit Trail</h2>
-          <span className="text-[12px] text-[var(--muted-foreground)]">
-            Menampilkan riwayat aksi admin terbaru
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] text-[var(--muted-foreground)]">Menampilkan riwayat aksi admin terbaru</span>
+            {logList.length > 0 && <button onClick={() => deleteActivityLog()} className="btn btn-danger !h-8 !px-2 !text-[11px]"><Trash2 size={12} /> Hapus seluruh log</button>}
+          </div>
         </div>
 
         {logList.length === 0 ? (
@@ -385,6 +402,7 @@ function DashboardContent() {
                   <th>Detail</th>
                   <th>Aktor</th>
                   <th>Waktu</th>
+                  <th className="text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -404,6 +422,9 @@ function DashboardContent() {
                       <td className="text-[var(--muted-foreground)]">{log.detail || "-"}</td>                      <td>{log.aktor}</td>
                       <td className="whitespace-nowrap text-[var(--muted-foreground)]">
                         {formatDateTime(log.waktu)} WITA
+                      </td>
+                      <td className="text-right">
+                        <button onClick={() => deleteActivityLog(log.id)} className="btn btn-danger !h-7 !px-2 !text-[11px]" title="Hapus log aktivitas"><Trash2 size={12} /> Hapus</button>
                       </td>
                     </tr>
                   );

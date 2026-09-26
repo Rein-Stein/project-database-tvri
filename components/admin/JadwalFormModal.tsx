@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
+import { useAuth } from "@/context/AuthContext";
 import { Field, inputClass, textareaClass } from "@/components/admin/AdminUI";
 import {
   formatDate,
@@ -23,6 +24,7 @@ interface Props {
 
 export function JadwalFormModal({ existing, onClose }: Props) {
   const { narasumberList, jadwalList, addJadwal, updateJadwal, addLog } = useNarasumber();
+  const { user } = useAuth();
   const { showToast } = useToast();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -55,7 +57,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
       (j) => j.narasumberId === narasumberId && j.tanggal === tanggal && j.status === "dijadwalkan"
     );
 
-  const doSave = (withOverride = false) => {
+  const doSave = async (withOverride = false) => {
     if (!narasumberId || !tanggal || !program.trim()) {
       showToast("Narasumber, Tanggal, dan Program wajib diisi.", "error");
       return;
@@ -66,6 +68,47 @@ export function JadwalFormModal({ existing, onClose }: Props) {
     }
     setSaving(true);
     const nama = selectedNarasumber?.nama ?? "";
+    if (user?.role === "operator") {
+      if (!existing) {
+        showToast("Operator hanya dapat mengajukan edit jadwal yang sudah ada.", "error");
+        setSaving(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/change-requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entityType: "jadwal_siaran_update",
+            entityId: existing.id,
+            dataBaru: {
+              narasumberId,
+              tanggal,
+              waktu,
+              program: program.trim(),
+              jenisSiaran,
+              topik: topik.trim(),
+              catatan: catatan.trim(),
+              status: statusJadwal,
+              tanggalBaru: existing.tanggalBaru ?? "",
+            },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(data.message ?? "Pengajuan perubahan jadwal gagal.", "error");
+          return;
+        }
+        showToast("Perubahan jadwal diajukan dan menunggu persetujuan Admin.", "success");
+        onClose();
+        return;
+      } catch {
+        showToast("Pengajuan gagal dikirim. Periksa koneksi lalu coba lagi.", "error");
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
     if (existing) {
       updateJadwal(existing.id, {
         narasumberId,
@@ -248,7 +291,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
                 disabled={saving || !!hasDoubleBooking}
                 className="btn btn-primary w-full sm:w-auto"
               >
-                {saving ? "Menyimpan..." : existing ? "Simpan Perubahan" : "Buat Jadwal"}
+                {saving ? "Menyimpan..." : existing && user?.role === "operator" ? "Ajukan Perubahan" : existing ? "Simpan Perubahan" : "Buat Jadwal"}
               </button>
             </div>
           </>
