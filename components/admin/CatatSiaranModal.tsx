@@ -93,7 +93,7 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
             dataBaru: requestData,
           } : {
             entityType: "jadwal_siaran_create",
-            dataBaru: requestData,
+            dataBaru: { ...requestData, catatSebagaiSiaran: true },
           }),
         });
         const result = await response.json().catch(() => ({}));

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
-import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
+import { isJadwalSelesai, type ChangeRequestData, type JadwalChangeData, type NarasumberChangeData } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,7 @@ function jadwalData(value: ChangeRequestData): JadwalChangeData | null {
   if (typeof value.narasumberId !== "string" || typeof value.tanggal !== "string" || typeof value.program !== "string") return null;
   if (typeof value.status !== "string" || typeof value.jenisSiaran !== "string" || !isValidDate(value.tanggal)) return null;
   if (value.tanggalBaru && !isValidDate(value.tanggalBaru)) return null;
+  if (value.catatSebagaiSiaran === true && !isJadwalSelesai({ tanggal: value.tanggal, waktu: value.waktu ?? "" })) return null;
   return {
     narasumberId: value.narasumberId,
     tanggal: value.tanggal,
@@ -57,6 +58,7 @@ function jadwalData(value: ChangeRequestData): JadwalChangeData | null {
     catatan: value.catatan ?? "",
     status: value.status as JadwalChangeData["status"],
     tanggalBaru: value.tanggalBaru ?? "",
+    ...(value.catatSebagaiSiaran === true ? { catatSebagaiSiaran: true } : {}),
   };
 }
 
@@ -136,11 +138,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "ID jadwal sudah digunakan. Pengajuan tidak dapat diterapkan." }, { status: 409 });
         }
+        const recordAsBroadcast = data.catatSebagaiSiaran === true || data.status === "sudah-tampil";
         await connection.query(
           "INSERT INTO jadwal_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan, status, tanggal_baru) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [change.entity_id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null]
+          [change.entity_id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, recordAsBroadcast ? "sudah-tampil" : data.status, data.tanggalBaru || null]
         );
-        if (data.status === "sudah-tampil") {
+        if (recordAsBroadcast) {
           const historyId = `jadwal-${change.entity_id}`;
           const [history] = await connection.query<RowDataPacket[]>("SELECT id FROM riwayat_siaran WHERE id = ? FOR UPDATE", [historyId]);
           if (!history.length) {

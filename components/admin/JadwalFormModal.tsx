@@ -13,6 +13,7 @@ import {
   getLastAppearance,
   getNarasumberStatus,
   getRemainingDays,
+  isJadwalSelesai,
   type JenisSiaran,
   type JadwalSiaran,
 } from "@/types";
@@ -35,6 +36,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   const [jenisSiaran, setJenisSiaran] = useState<JenisSiaran>(existing?.jenisSiaran ?? "live");
   const [topik, setTopik] = useState(existing?.topik ?? "");
   const [catatan, setCatatan] = useState(existing?.catatan ?? "");
+  const [catatSebagaiSiaran, setCatatSebagaiSiaran] = useState(false);
   const [statusJadwal, setStatusJadwal] = useState(existing?.status ?? "dijadwalkan");
   const [overrideAlasan, setOverrideAlasan] = useState("");
   const [showOverride, setShowOverride] = useState(false);
@@ -64,6 +66,10 @@ export function JadwalFormModal({ existing, onClose }: Props) {
     }
     if (withOverride && !overrideAlasan.trim()) {
       showToast("Harap isi alasan override.", "error");
+      return;
+    }
+    if (!existing && catatSebagaiSiaran && !isJadwalSelesai({ tanggal, waktu })) {
+      showToast("Siaran masa depan belum dapat dicatat sebagai riwayat.", "error");
       return;
     }
     setSaving(true);
@@ -131,7 +137,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
         jenisSiaran,
         topik: topik.trim() || undefined,
         catatan: catatan.trim() || undefined,
-      });
+      }, catatSebagaiSiaran);
       const overrideNote = withOverride ? ` [OVERRIDE: ${overrideAlasan.trim()}]` : "";
       addLog(`Buat jadwal: ${nama}${overrideNote}`, `Tanggal: ${formatDate(tanggal)}, Program: ${program.trim()}`);
       showToast(`Jadwal ${nama} berhasil dibuat.`, "success");
@@ -281,6 +287,20 @@ export function JadwalFormModal({ existing, onClose }: Props) {
                   placeholder="Catatan tambahan..."
                 />
               </Field>
+              {!existing && (
+                <label className="flex items-start gap-2 border-t border-[var(--border)] pt-3 text-[12px]">
+                  <input
+                    type="checkbox"
+                    checked={catatSebagaiSiaran}
+                    onChange={(e) => setCatatSebagaiSiaran(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="block font-semibold">Catat sebagai siaran</span>
+                    <span className="text-[var(--muted-foreground)]">Jika dicentang, jadwal akan langsung dicatat sebagai riwayat siaran sehingga tidak perlu dicatat ulang. Hanya gunakan setelah siaran berlangsung.</span>
+                  </span>
+                </label>
+              )}
             </div>
             <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-end">
               <button onClick={onClose} className="btn btn-outline w-full sm:w-auto">

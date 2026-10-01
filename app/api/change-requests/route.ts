@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createHash } from "crypto";
 import type { RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
-import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
+import { isJadwalSelesai, type ChangeRequestData, type JadwalChangeData, type NarasumberChangeData } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,8 @@ function normalizeJadwal(value: unknown): JadwalChangeData | null {
   if (jenisSiaran !== "live" && jenisSiaran !== "rekaman") return null;
   const optionalFields = ["waktu", "topik", "catatan", "tanggalBaru"] as const;
   if (optionalFields.some((field) => data[field] !== undefined && typeof data[field] !== "string")) return null;
+  if (data.catatSebagaiSiaran !== undefined && typeof data.catatSebagaiSiaran !== "boolean") return null;
+  if (data.catatSebagaiSiaran === true && !isJadwalSelesai({ tanggal: data.tanggal, waktu: String(data.waktu ?? "") })) return null;
   if (data.tanggalBaru && !isValidDate(String(data.tanggalBaru))) return null;
   return {
     narasumberId: data.narasumberId.trim(),
@@ -114,6 +117,7 @@ function normalizeJadwal(value: unknown): JadwalChangeData | null {
     catatan: String(data.catatan ?? "").trim(),
     status: status as JadwalChangeData["status"],
     tanggalBaru: String(data.tanggalBaru ?? "").trim(),
+    catatSebagaiSiaran: data.catatSebagaiSiaran === true,
   };
 }
 
@@ -136,7 +140,7 @@ export async function POST(request: Request) {
   if (!isCreate && !isNarasumberUpdate && !isJadwalCreate && !isJadwalUpdate) {
     return NextResponse.json({ ok: false, message: "Data entitas tidak valid." }, { status: 400 });
   }
-  if (!isCreate && (typeof body.entityId !== "string" || !body.entityId.trim())) {
+  if (!isCreate && !isJadwalCreate && (typeof body.entityId !== "string" || !body.entityId.trim())) {
     return NextResponse.json({ ok: false, message: "ID data yang diajukan tidak valid." }, { status: 400 });
   }
 
@@ -144,7 +148,7 @@ export async function POST(request: Request) {
   try {
     await connection.beginTransaction();
     const isCreateRequest = isCreate || isJadwalCreate;
-    const entityId = isCreateRequest ? `${isCreate ? "n" : "j"}${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : String(body.entityId).trim();
+    let entityId = isCreateRequest ? `${isCreate ? "n" : "j"}${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : String(body.entityId).trim();
     const storedEntityType = isCreate ? "narasumber_create" : isJadwalCreate ? "jadwal_siaran_create" : isJadwalUpdate ? "jadwal_siaran_update" : "narasumber_update";
     let dataLama: ChangeRequestData = {};
     let dataBaru: ChangeRequestData;
@@ -188,6 +192,7 @@ export async function POST(request: Request) {
       }
       if (isJadwalCreate) {
         dataBaru = normalized;
+        entityId = `j-${createHash("sha256").update(`${session.userId}:${JSON.stringify(normalized)}`).digest("hex").slice(0, 48)}`;
       } else {
       const [rows] = await connection.query<RowDataPacket[]>("SELECT * FROM jadwal_siaran WHERE id = ? FOR UPDATE", [entityId]);
       const current = rows[0];

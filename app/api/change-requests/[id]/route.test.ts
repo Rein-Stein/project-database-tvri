@@ -124,7 +124,7 @@ describe("PATCH /api/change-requests/[id]", () => {
   it("creates schedule and linked history only once when an operator request is approved", async () => {
     const data = {
       narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
-      jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "sudah-tampil", tanggalBaru: "",
+      jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "", catatSebagaiSiaran: true,
     };
     mocks.connectionQuery
       .mockResolvedValueOnce([[{
@@ -150,6 +150,29 @@ describe("PATCH /api/change-requests/[id]", () => {
     expect(String(mocks.connectionQuery.mock.calls[4][0])).toContain("INSERT INTO riwayat_siaran");
     expect(mocks.connectionQuery.mock.calls[4][1][0]).toBe("jadwal-j-new-1");
     expect(mocks.connectionQuery.mock.calls.filter(([sql]) => String(sql).includes("INSERT INTO riwayat_siaran"))).toHaveLength(1);
+    expect(mocks.commit).toHaveBeenCalledOnce();
+  });
+
+  it("approves a schedule without the recording flag without creating history", async () => {
+    const data = {
+      narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
+      jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+    };
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{
+        id: "cr-jadwal-no-history", entity_type: "jadwal_siaran_create", entity_id: "j-new-2",
+        operator_id: "operator-1", data_lama: {}, data_baru: data, status: "pending",
+      }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    const response = await PATCH(patchRequest({ action: "approve" }), { params: { id: "cr-jadwal-no-history" } });
+
+    expect(response.status).toBe(200);
+    expect(String(mocks.connectionQuery.mock.calls[2][0])).toContain("INSERT INTO jadwal_siaran");
+    expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO riwayat_siaran"))).toBe(false);
     expect(mocks.commit).toHaveBeenCalledOnce();
   });
 

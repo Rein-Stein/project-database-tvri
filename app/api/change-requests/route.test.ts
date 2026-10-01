@@ -70,4 +70,41 @@ describe("POST /api/change-requests", () => {
     expect(response.status).toBe(403);
     expect(mocks.getConnection).not.toHaveBeenCalled();
   });
+
+  it("uses a stable schedule entity ID so an identical retry stays one pending request", async () => {
+    const body = {
+      entityType: "jadwal_siaran_create",
+      dataBaru: {
+        narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
+        jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+        catatSebagaiSiaran: true,
+      },
+    };
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "n-1" }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+    const first = await POST(request(body));
+    const firstPayload = await first.json();
+    expect(firstPayload).toEqual(expect.objectContaining({ message: expect.any(String) }));
+    expect(first.status, JSON.stringify(firstPayload)).toBe(201);
+    const firstInsert = mocks.connectionQuery.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO change_requests"));
+    const firstEntityId = firstInsert?.[1][2];
+    expect(firstEntityId).toBeTypeOf("string");
+
+    Object.values(mocks).forEach((mock) => mock.mockReset());
+    mocks.getConnection.mockResolvedValue(connection);
+    mocks.beginTransaction.mockResolvedValue(undefined);
+    mocks.rollback.mockResolvedValue(undefined);
+    mocks.release.mockReturnValue(undefined);
+    mocks.verifySessionToken.mockReturnValue({ userId: "operator-1", role: "operator", name: "Operator" });
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "n-1" }]])
+      .mockResolvedValueOnce([[{ id: "existing" }]]);
+    const retry = await POST(request(body));
+
+    expect(retry.status).toBe(409);
+    expect(mocks.connectionQuery.mock.calls[1][1]).toContain(firstEntityId);
+    expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO change_requests"))).toBe(false);
+  });
 });
