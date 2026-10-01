@@ -9,7 +9,7 @@ const statusLabel = { pending: "Menunggu Persetujuan", approved: "Disetujui", re
 
 function requestTypeLabel(entityType: ChangeRequest["entityType"]): string {
   if (entityType === "narasumber_create") return "Tambah Narasumber";
-  if (entityType === "jadwal_siaran_create") return "Tambah Jadwal & Catat Siaran";
+  if (entityType === "jadwal_siaran_create") return "Tambah Jadwal";
   if (entityType === "jadwal_siaran_update") return "Edit Jadwal";
   return "Edit Narasumber";
 }

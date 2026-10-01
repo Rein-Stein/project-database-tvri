@@ -84,32 +84,6 @@ describe("POST /api/siaran", () => {
     expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO riwayat_siaran"))).toBe(false);
   });
 
-  it("creates a schedule and linked history in one transaction when requested", async () => {
-    mocks.query
-      .mockResolvedValueOnce([[{ id: "n-1" }]])
-      .mockResolvedValueOnce([[]])
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([[]])
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([{ affectedRows: 1 }]);
-
-    const response = await POST(request({
-      narasumberId: "n-1",
-      createSchedule: true,
-      data: { tanggal: "2026-09-26", waktu: "09:00", program: "Dialog Pagi", jenisSiaran: "live", topik: "Pendidikan", catatan: "" },
-    }));
-    const body = await response.json();
-
-    expect(response.status).toBe(201);
-    expect(body.scheduleId).toMatch(/^j-/);
-    expect(String(mocks.query.mock.calls[2][0])).toContain("INSERT INTO jadwal_siaran");
-    expect(String(mocks.query.mock.calls[4][0])).toContain("INSERT INTO riwayat_siaran");
-    expect(mocks.query.mock.calls[4][1][0]).toBe(`jadwal-${body.scheduleId}`);
-    expect(mocks.commit).toHaveBeenCalledOnce();
-  });
-
   it("is idempotent when the same recording request is sent twice", async () => {
     // Kiriman pertama: riwayat dibuat
     mocks.query

@@ -4,7 +4,7 @@ import { createHash } from "crypto";
 import type { RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
-import { isJadwalSelesai, type ChangeRequestData, type JadwalChangeData, type NarasumberChangeData } from "@/types";
+import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -104,8 +104,6 @@ function normalizeJadwal(value: unknown): JadwalChangeData | null {
   if (jenisSiaran !== "live" && jenisSiaran !== "rekaman") return null;
   const optionalFields = ["waktu", "topik", "catatan", "tanggalBaru"] as const;
   if (optionalFields.some((field) => data[field] !== undefined && typeof data[field] !== "string")) return null;
-  if (data.catatSebagaiSiaran !== undefined && typeof data.catatSebagaiSiaran !== "boolean") return null;
-  if (data.catatSebagaiSiaran === true && !isJadwalSelesai({ tanggal: data.tanggal, waktu: String(data.waktu ?? "") })) return null;
   if (data.tanggalBaru && !isValidDate(String(data.tanggalBaru))) return null;
   return {
     narasumberId: data.narasumberId.trim(),
@@ -117,7 +115,6 @@ function normalizeJadwal(value: unknown): JadwalChangeData | null {
     catatan: String(data.catatan ?? "").trim(),
     status: status as JadwalChangeData["status"],
     tanggalBaru: String(data.tanggalBaru ?? "").trim(),
-    catatSebagaiSiaran: data.catatSebagaiSiaran === true,
   };
 }
 

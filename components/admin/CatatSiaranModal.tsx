@@ -6,36 +6,29 @@ import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import { Field, inputClass, textareaClass } from "@/components/admin/AdminUI";
-import { PlusCircle } from "lucide-react";
 import {
   formatDate,
   getCooldownEnd,
   isJadwalSelesai,
   getLastAppearance,
   getNarasumberStatus,
-  type JenisSiaran,
+  type JadwalSiaran,
   type Narasumber,
 } from "@/types";
 
 interface Props {
   narasumber: Narasumber;
+  jadwal?: JadwalSiaran;
   onClose: () => void;
 }
 
-export function CatatSiaranModal({ narasumber, onClose }: Props) {
+export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
   const { jadwalList } = useNarasumber();
   const { user } = useAuth();
   const { showToast } = useToast();
 
   const today = new Date().toISOString().slice(0, 10);
-  const [tanggal, setTanggal] = useState(today);
-  const [waktu, setWaktu] = useState("");
-  const [program, setProgram] = useState("");
-  const [jenisSiaran, setJenisSiaran] = useState<JenisSiaran>("live");
-  const [topik, setTopik] = useState("");
-  const [catatan, setCatatan] = useState("");
-  const [selectedJadwalId, setSelectedJadwalId] = useState("");
-  const [createSchedule, setCreateSchedule] = useState(false);
+  const [selectedJadwalId, setSelectedJadwalId] = useState(jadwal?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -51,49 +44,38 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
     && !narasumber.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id)
     && isJadwalSelesai(jadwal)
   );
-  const selectedSchedule = availableSchedules.find((jadwal) => jadwal.id === selectedJadwalId);
+  const selectedSchedule = jadwal ?? availableSchedules.find((item) => item.id === selectedJadwalId);
 
   const handleSubmit = async () => {
-    if (!tanggal || !program.trim()) {
-      showToast("Tanggal dan Program wajib diisi.", "error");
+    if (!selectedSchedule) {
+      showToast("Pilih jadwal yang akan dicatat.", "error");
+      return;
+    }
+    if (!isJadwalSelesai(selectedSchedule)) {
+      showToast("Siaran belum berlangsung sehingga belum dapat dicatat.", "error");
       return;
     }
     setSaving(true);
-    const data = selectedSchedule ? {
-      narasumberId: selectedSchedule.narasumberId,
-      tanggal: selectedSchedule.tanggal,
-      waktu: selectedSchedule.waktu ?? "",
-      program: selectedSchedule.program,
-      jenisSiaran: selectedSchedule.jenisSiaran ?? "live",
-      topik: selectedSchedule.topik ?? "",
-      catatan: selectedSchedule.catatan ?? "",
-    } : {
-      narasumberId: narasumber.id,
-      tanggal,
-      waktu,
-      program: program.trim(),
-      jenisSiaran,
-      topik: topik.trim(),
-      catatan: catatan.trim(),
-    };
-    const requestData = { ...data, status: "sudah-tampil", tanggalBaru: selectedSchedule?.tanggalBaru ?? "" };
 
     try {
       if (user?.role === "operator") {
-        if (!selectedSchedule && !createSchedule) {
-          showToast("Pilih jadwal atau gunakan + Buat Jadwal agar pengajuan dapat disetujui Admin.", "error");
-          return;
-        }
         const response = await fetch("/api/change-requests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(selectedSchedule ? {
+          body: JSON.stringify({
             entityType: "jadwal_siaran_update",
             entityId: selectedSchedule.id,
-            dataBaru: requestData,
-          } : {
-            entityType: "jadwal_siaran_create",
-            dataBaru: { ...requestData, catatSebagaiSiaran: true },
+            dataBaru: {
+              narasumberId: selectedSchedule.narasumberId,
+              tanggal: selectedSchedule.tanggal,
+              waktu: selectedSchedule.waktu ?? "",
+              program: selectedSchedule.program,
+              jenisSiaran: selectedSchedule.jenisSiaran ?? "live",
+              topik: selectedSchedule.topik ?? "",
+              catatan: selectedSchedule.catatan ?? "",
+              status: "sudah-tampil",
+              tanggalBaru: selectedSchedule.tanggalBaru ?? "",
+            },
           }),
         });
         const result = await response.json().catch(() => ({}));
@@ -106,16 +88,14 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
       const response = await fetch("/api/siaran", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selectedSchedule
-          ? { narasumberId: narasumber.id, jadwalId: selectedSchedule.id }
-          : { narasumberId: narasumber.id, data, createSchedule }),
+        body: JSON.stringify({ narasumberId: narasumber.id, jadwalId: selectedSchedule.id }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message ?? "Catatan siaran gagal disimpan.");
-      const cooldownEnd = getCooldownEnd(data.tanggal);
+      const cooldownEnd = getCooldownEnd(selectedSchedule.tanggal);
       showToast(result.alreadyRecorded
         ? "Siaran ini sudah tercatat sebelumnya."
-        : `Siaran ${narasumber.nama} berhasil dicatat${result.scheduleId ? " dan terhubung dengan jadwal" : ""}. ${cooldownEnd ? `Boleh diundang kembali: ${formatDate(cooldownEnd.toISOString())}.` : ""}`, "success");
+        : `Siaran ${narasumber.nama} berhasil dicatat. ${cooldownEnd ? `Boleh diundang kembali: ${formatDate(cooldownEnd.toISOString())}.` : ""}`, "success");
       onClose();
       window.location.reload();
     } catch (error) {
@@ -140,50 +120,31 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
           </p>
         </header>
 
-        <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <div className="mb-3">
           <select
             className={inputClass}
             value={selectedJadwalId}
-            disabled={createSchedule}
+            disabled={Boolean(jadwal)}
             onChange={(event) => {
               const nextId = event.target.value;
               setSelectedJadwalId(nextId);
-              const schedule = availableSchedules.find((item) => item.id === nextId);
-              if (!schedule) return;
-              setTanggal(schedule.tanggal);
-              setWaktu(schedule.waktu ?? "");
-              setProgram(schedule.program);
-              setJenisSiaran(schedule.jenisSiaran ?? "live");
-              setTopik(schedule.topik ?? "");
-              setCatatan(schedule.catatan ?? "");
             }}
             aria-label="Pilih jadwal terkait"
           >
-            <option value="">Catat tanpa jadwal</option>
+            <option value="">Pilih jadwal yang sudah berlangsung</option>
             {availableSchedules.map((schedule) => (
               <option key={schedule.id} value={schedule.id}>
                 {formatDate(schedule.tanggal)} · {schedule.waktu || "-"} · {schedule.program}
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            aria-pressed={createSchedule}
-            onClick={() => { setCreateSchedule((value) => !value); setSelectedJadwalId(""); }}
-            className={createSchedule ? "btn btn-primary" : "btn btn-outline"}
-          >
-            <PlusCircle size={14} /> {createSchedule ? "Jadwal Baru Dipilih" : "+ Buat Jadwal"}
-          </button>
         </div>
 
         {selectedSchedule && <p className="mb-3 border-l-2 border-[var(--accent)] pl-3 text-[12px] text-[var(--muted-foreground)]">
           Menggunakan data jadwal {selectedSchedule.id}; tanggal, program, dan detail siaran akan diambil dari jadwal tersebut.
         </p>}
-        {createSchedule && <p className="mb-3 border-l-2 border-[var(--accent)] pl-3 text-[12px] text-[var(--muted-foreground)]">
-          {user?.role === "operator" ? "Jadwal baru dan pencatatan siaran akan diajukan ke Admin." : "Jadwal baru dan catatan siaran dibuat bersama."}
-        </p>}
-        {availableSchedules.length === 0 && !createSchedule && jadwalList.some((jadwal) =>
-          jadwal.narasumberId === narasumber.id && jadwal.status === "dijadwalkan"
+        {availableSchedules.length === 0 && !jadwal && jadwalList.some((item) =>
+          item.narasumberId === narasumber.id && item.status === "dijadwalkan"
         ) && <p className="mb-3 border-l-2 border-[var(--warning)] pl-3 text-[12px] text-[var(--muted-foreground)]">
           Jadwal untuk narasumber ini sudah dibuat, tetapi waktunya belum terlaksana. Catat siaran hanya setelah waktu tayang terlewat.
         </p>}
@@ -197,24 +158,21 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Tanggal Siaran" required>
-              <input type="date" className={inputClass} value={tanggal} disabled={!!selectedSchedule} onChange={(e) => setTanggal(e.target.value)} />
+              <input type="date" className={inputClass} value={selectedSchedule?.tanggal ?? today} disabled />
             </Field>
             <Field label="Waktu (WITA)">
-              <input type="time" className={inputClass} value={waktu} disabled={!!selectedSchedule} onChange={(e) => setWaktu(e.target.value)} />
+              <input type="time" className={inputClass} value={selectedSchedule?.waktu ?? ""} disabled />
             </Field>
           </div>
           <Field label="Nama Program / Acara" required>
             <input
               className={inputClass}
-              value={program}
-              disabled={!!selectedSchedule}
-              onChange={(e) => setProgram(e.target.value)}
-              placeholder="Dialog Pagi, Siaran Berita, dll."
-              autoFocus
+              value={selectedSchedule?.program ?? ""}
+              disabled
             />
           </Field>
           <Field label="Jenis Siaran" required>
-            <select className={inputClass} value={jenisSiaran} disabled={!!selectedSchedule} onChange={(e) => setJenisSiaran(e.target.value as JenisSiaran)}>
+            <select className={inputClass} value={selectedSchedule?.jenisSiaran ?? "live"} disabled>
               <option value="live">Live</option>
               <option value="rekaman">Rekaman</option>
             </select>
@@ -222,20 +180,16 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
           <Field label="Topik Pembahasan">
             <input
               className={inputClass}
-              value={topik}
-              disabled={!!selectedSchedule}
-              onChange={(e) => setTopik(e.target.value)}
-              placeholder="Kesehatan Masyarakat Kaltim"
+              value={selectedSchedule?.topik ?? ""}
+              disabled
             />
           </Field>
           <Field label="Catatan Tambahan">
             <textarea
               className={textareaClass}
               rows={2}
-              value={catatan}
-              disabled={!!selectedSchedule}
-              onChange={(e) => setCatatan(e.target.value)}
-              placeholder="Catatan opsional..."
+              value={selectedSchedule?.catatan ?? ""}
+              disabled
             />
           </Field>
         </div>
@@ -245,7 +199,7 @@ export function CatatSiaranModal({ narasumber, onClose }: Props) {
             Batal
           </button>
           <button onClick={handleSubmit} disabled={saving} className="btn btn-primary w-full sm:w-auto">
-            {saving ? "Menyimpan..." : user?.role === "operator" ? "Ajukan Pencatatan" : createSchedule ? "Buat Jadwal & Catat" : selectedSchedule ? "Catat dari Jadwal" : "Simpan Riwayat Siaran"}
+            {saving ? "Menyimpan..." : user?.role === "operator" ? "Ajukan Pencatatan" : "Catat dari Jadwal"}
           </button>
         </div>
       </div>

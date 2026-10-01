@@ -24,7 +24,7 @@ interface NarasumberContextValue {
   catatSiaran: (id: string, data: Omit<RiwayatSiaran, "id">) => void;
   updateRiwayat: (id: string, riwayatId: string, patch: Partial<RiwayatSiaran>) => void;
   removeRiwayat: (id: string, riwayatId: string) => void;
-  addJadwal: (data: Omit<JadwalSiaran, "id" | "status">, catatSebagaiSiaran?: boolean) => JadwalSiaran;
+  addJadwal: (data: Omit<JadwalSiaran, "id" | "status">) => JadwalSiaran;
   updateJadwal: (id: string, patch: Partial<JadwalSiaran>) => void;
   setJadwalStatus: (id: string, status: JadwalStatus, extra?: { tanggalBaru?: string }) => void;
   removeJadwal: (id: string) => void;
@@ -443,39 +443,13 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const addJadwal: NarasumberContextValue["addJadwal"] = useCallback((data, catatSebagaiSiaran = false) => {
-    const jadwal: JadwalSiaran = {
-      ...data,
-      id: `j${Date.now()}`,
-      status: catatSebagaiSiaran ? "sudah-tampil" : "dijadwalkan",
-    };
+  const addJadwal: NarasumberContextValue["addJadwal"] = useCallback((data) => {
+    const jadwal: JadwalSiaran = { ...data, id: `j${Date.now()}`, status: "dijadwalkan" };
     setJadwalList((prev) => {
       const next = [...prev, jadwal];
       localStorage.setItem(JADWAL_KEY, JSON.stringify(next));
       return next;
     });
-    if (catatSebagaiSiaran) {
-      setList((prev) => {
-        if (prev.some((n) => n.riwayat.some((history) => history.id === `jadwal-${jadwal.id}`))) return prev;
-        const next = recompute(prev.map((n) => n.id === jadwal.narasumberId
-          ? {
-              ...n,
-              riwayat: [...(n.riwayat || []), {
-                id: `jadwal-${jadwal.id}`,
-                jadwalId: jadwal.id,
-                tanggal: jadwal.tanggal,
-                waktu: jadwal.waktu,
-                program: jadwal.program,
-                jenisSiaran: jadwal.jenisSiaran ?? "live",
-                topik: jadwal.topik,
-                catatan: jadwal.catatan,
-              }],
-            }
-          : n));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        return next;
-      });
-    }
     return jadwal;
   }, []);
 

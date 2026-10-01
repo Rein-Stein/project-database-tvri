@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Pencil, Search } from "lucide-react";
 import { OperatorGuard } from "@/components/OperatorGuard";
 import { JadwalFormModal } from "@/components/admin/JadwalFormModal";
+import { CatatSiaranModal } from "@/components/admin/CatatSiaranModal";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { formatDate, JADWAL_LABEL, type JadwalSiaran } from "@/types";
 
@@ -15,6 +16,8 @@ function OperatorJadwalContent() {
   const { narasumberList, jadwalList } = useNarasumber();
   const [query, setQuery] = useState("");
   const [editJadwal, setEditJadwal] = useState<JadwalSiaran | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [catatJadwal, setCatatJadwal] = useState<JadwalSiaran | null>(null);
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return jadwalList.filter((jadwal) => {
@@ -37,6 +40,7 @@ function OperatorJadwalContent() {
       </div>
       <a href="/operator" className="btn btn-outline">Data Narasumber</a>
       <a href="/operator/pengajuan" className="btn btn-outline">Riwayat Pengajuan</a>
+      <button onClick={() => setShowForm(true)} className="btn btn-primary">Buat Jadwal</button>
     </div>
     {filtered.length === 0 ? <div className="surface p-8 text-center text-[13px] text-[var(--muted-foreground)]">Belum ada jadwal yang cocok.</div> : <div className="surface overflow-x-auto">
       <table className="data-table">
@@ -47,12 +51,14 @@ function OperatorJadwalContent() {
             <td className="whitespace-nowrap">{formatDate(jadwal.tanggal)}{jadwal.waktu ? <div className="text-[12px] text-[var(--muted-foreground)]">{jadwal.waktu} WITA</div> : null}</td>
             <td className="font-semibold">{narasumber?.nama ?? "-"}</td>
             <td>{jadwal.program}{jadwal.topik ? <div className="text-[12px] text-[var(--muted-foreground)]">{jadwal.topik}</div> : null}</td>
-            <td>{JADWAL_LABEL[jadwal.status]}{narasumber?.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id) && <div className="mt-1 text-[11px] font-medium text-[var(--success)]">Siaran sudah dicatat</div>}</td>
-            <td className="text-right"><button onClick={() => setEditJadwal(jadwal)} className="btn btn-outline !h-7 !px-2 !text-[11px]"><Pencil size={12} /> Edit</button></td>
+            <td>{JADWAL_LABEL[jadwal.status]}<div className={`mt-1 text-[11px] font-medium ${narasumber?.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id) ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>{narasumber?.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id) ? "Siaran sudah dicatat" : "Siaran belum dicatat"}</div></td>
+            <td className="text-right"><div className="flex justify-end gap-1">{jadwal.status !== "dibatalkan" && !narasumber?.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id) && <button onClick={() => setCatatJadwal(jadwal)} className="btn btn-primary !h-7 !px-2 !text-[11px]">Catat Siaran</button>}<button onClick={() => setEditJadwal(jadwal)} className="btn btn-outline !h-7 !px-2 !text-[11px]"><Pencil size={12} /> Edit</button></div></td>
           </tr>;
         })}</tbody>
       </table>
     </div>}
+    {showForm && <JadwalFormModal existing={null} onClose={() => setShowForm(false)} />}
     {editJadwal && <JadwalFormModal existing={editJadwal} onClose={() => setEditJadwal(null)} />}
+    {catatJadwal && <CatatSiaranModal narasumber={narasumberList.find((item) => item.id === catatJadwal.narasumberId)!} jadwal={catatJadwal} onClose={() => setCatatJadwal(null)} />}
   </div>;
 }

@@ -77,7 +77,6 @@ describe("POST /api/change-requests", () => {
       dataBaru: {
         narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
         jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "",
-        catatSebagaiSiaran: true,
       },
     };
     mocks.connectionQuery

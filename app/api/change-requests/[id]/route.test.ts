@@ -121,38 +121,6 @@ describe("PATCH /api/change-requests/[id]", () => {
     expect(mocks.commit).toHaveBeenCalledOnce();
   });
 
-  it("creates schedule and linked history only once when an operator request is approved", async () => {
-    const data = {
-      narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
-      jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "", catatSebagaiSiaran: true,
-    };
-    mocks.connectionQuery
-      .mockResolvedValueOnce([[{
-        id: "cr-jadwal",
-        entity_type: "jadwal_siaran_create",
-        entity_id: "j-new-1",
-        operator_id: "operator-1",
-        data_lama: {},
-        data_baru: data,
-        status: "pending",
-      }]])
-      .mockResolvedValueOnce([[]])           // id jadwal belum ada
-      .mockResolvedValueOnce([{ affectedRows: 1 }]) // INSERT jadwal
-      .mockResolvedValueOnce([[]])           // riwayat belum ada
-      .mockResolvedValueOnce([{ affectedRows: 1 }]) // INSERT riwayat
-      .mockResolvedValueOnce([{ affectedRows: 1 }]) // update last_appearance
-      .mockResolvedValueOnce([{ affectedRows: 1 }]); // update change_requests
-
-    const response = await PATCH(patchRequest({ action: "approve" }), { params: { id: "cr-jadwal" } });
-
-    expect(response.status).toBe(200);
-    expect(String(mocks.connectionQuery.mock.calls[2][0])).toContain("INSERT INTO jadwal_siaran");
-    expect(String(mocks.connectionQuery.mock.calls[4][0])).toContain("INSERT INTO riwayat_siaran");
-    expect(mocks.connectionQuery.mock.calls[4][1][0]).toBe("jadwal-j-new-1");
-    expect(mocks.connectionQuery.mock.calls.filter(([sql]) => String(sql).includes("INSERT INTO riwayat_siaran"))).toHaveLength(1);
-    expect(mocks.commit).toHaveBeenCalledOnce();
-  });
-
   it("approves a schedule without the recording flag without creating history", async () => {
     const data = {
       narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",

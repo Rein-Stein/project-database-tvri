@@ -20,7 +20,6 @@ export interface JadwalChangeData {
   catatan: string;
   status: JadwalStatus;
   tanggalBaru: string;
-  catatSebagaiSiaran?: boolean;
 }
 
 export type ChangeRequestEntityType = "narasumber" | "narasumber_create" | "narasumber_update" | "jadwal_siaran_create" | "jadwal_siaran_update";

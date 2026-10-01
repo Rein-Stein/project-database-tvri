@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import {
   CalendarPlus,
-  CheckCircle2,
   Pencil,
   PauseCircle,
   PlayCircle,
@@ -20,6 +19,7 @@ import {
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminSubNav, JadwalBadge } from "@/components/admin/AdminUI";
 import { JadwalFormModal } from "@/components/admin/JadwalFormModal";
+import { CatatSiaranModal } from "@/components/admin/CatatSiaranModal";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +38,11 @@ function JadwalContent() {
     useNarasumber();
   const { showToast } = useToast();
 
-  const [processingScheduleId, setProcessingScheduleId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [showForm, setShowForm] = useState(false);
   const [editJadwal, setEditJadwal] = useState<JadwalSiaran | null>(null);
+  const [catatJadwal, setCatatJadwal] = useState<JadwalSiaran | null>(null);
   const [undaTanggal, setUndaTanggal] = useState<{ id: string; val: string } | null>(null);
 
   const getNama = (id: string) => narasumberList.find((n) => n.id === id)?.nama ?? "-";
@@ -77,32 +77,6 @@ function JadwalContent() {
       })
       .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
   }, [jadwalList, filterStatus, filterPeriode]);
-
-  const handleTandaiTampil = async (j: JadwalSiaran) => {
-    const waitingSummary = "periode jeda yang diatur admin";
-    if (
-      !confirm(
-        `Tandai ${getNama(j.narasumberId)} sudah tampil pada ${formatDate(j.tanggal)}?\n\nIni akan membuat riwayat siaran dan memulai ulang ${waitingSummary}.`
-      )
-    )
-      return;
-    setProcessingScheduleId(j.id);
-    try {
-      const response = await fetch("/api/siaran", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ narasumberId: j.narasumberId, jadwalId: j.id }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message ?? "Jadwal gagal dicatat.");
-      showToast(data.alreadyRecorded ? "Siaran ini sudah pernah dicatat." : `${getNama(j.narasumberId)} ditandai sudah tampil. Masa tunggu baru dimulai.`, "success");
-      window.location.reload();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Jadwal gagal dicatat.", "error");
-    } finally {
-      setProcessingScheduleId(null);
-    }
-  };
 
   const handleBatalkan = (j: JadwalSiaran) => {
     if (!confirm(`Batalkan jadwal ${getNama(j.narasumberId)} pada ${formatDate(j.tanggal)}?`)) return;
@@ -282,20 +256,26 @@ function JadwalContent() {
                   </td>
                   <td className="text-[var(--muted-foreground)]">{j.topik || "-"}</td>                  <td>
                     <JadwalBadge status={j.status} />
-                    {hasRecordedHistory(j) && <div className="mt-1 text-[11px] font-medium text-[var(--success)]">Siaran sudah dicatat</div>}
+                    <div className={cn(
+                      "mt-1 text-[11px] font-medium",
+                      hasRecordedHistory(j) ? "text-[var(--success)]" : "text-[var(--danger)]"
+                    )}>
+                      {hasRecordedHistory(j) ? "Siaran sudah dicatat" : "Siaran belum dicatat"}
+                    </div>
                   </td>
                   <td className="text-right">
                     <div className="flex flex-wrap justify-end gap-1">
+                      {j.status !== "dibatalkan" && !hasRecordedHistory(j) && (
+                        <button
+                          onClick={() => setCatatJadwal(j)}
+                          title="Catat Siaran"
+                          className="btn btn-primary !h-7 !px-2 !text-[11px]"
+                        >
+                          Catat Siaran
+                        </button>
+                      )}
                       {j.status === "dijadwalkan" && (
                         <>
-                          <button
-                            onClick={() => handleTandaiTampil(j)}
-                            disabled={processingScheduleId === j.id}
-                            title="Tandai Sudah Tampil"
-                            className="btn btn-primary !h-7 !px-2 !text-[11px]"
-                          >
-                            <CheckCircle2 size={12} /> Tampil
-                          </button>
                           <button
                             onClick={() => {
                               setEditJadwal(j);
@@ -426,6 +406,13 @@ function JadwalContent() {
             setShowForm(false);
             setEditJadwal(null);
           }}
+        />
+      )}
+      {catatJadwal && (
+        <CatatSiaranModal
+          narasumber={narasumberList.find((item) => item.id === catatJadwal.narasumberId)!}
+          jadwal={catatJadwal}
+          onClose={() => setCatatJadwal(null)}
         />
       )}
     </div>
