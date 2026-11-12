@@ -5,6 +5,8 @@ import type { RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
+import { findDatabaseRotationConflict } from "@/lib/rotation";
+import { toIsoDate } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -84,13 +86,14 @@ function normalizeNarasumber(value: unknown): NarasumberChangeData | null {
 }
 
 function dateString(value: unknown): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").slice(0, 10);
+  return value instanceof Date ? toIsoDate(value) : String(value ?? "").slice(0, 10);
 }
 
 function isValidDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
 function normalizeJadwal(value: unknown): JadwalChangeData | null {
@@ -149,6 +152,7 @@ export async function POST(request: Request) {
     const storedEntityType = isCreate ? "narasumber_create" : isJadwalCreate ? "jadwal_siaran_create" : isJadwalUpdate ? "jadwal_siaran_update" : "narasumber_update";
     let dataLama: ChangeRequestData = {};
     let dataBaru: ChangeRequestData;
+    let lastAppearanceForSchedule: string | null = null;
 
     if (isCreate || isNarasumberUpdate) {
       const normalized = normalizeNarasumber(body.dataBaru);
@@ -182,16 +186,23 @@ export async function POST(request: Request) {
         await connection.rollback();
         return NextResponse.json({ ok: false, message: "Data jadwal tidak valid." }, { status: 400 });
       }
-      const [people] = await connection.query<RowDataPacket[]>("SELECT id FROM narasumber WHERE id = ? FOR UPDATE", [normalized.narasumberId]);
+      const [people] = await connection.query<RowDataPacket[]>(
+        "SELECT id, DATE_FORMAT(last_appearance, '%Y-%m-%d') AS last_appearance FROM narasumber WHERE id = ? FOR UPDATE",
+        [normalized.narasumberId]
+      );
       if (!people.length) {
         await connection.rollback();
         return NextResponse.json({ ok: false, message: "Narasumber jadwal tidak ditemukan." }, { status: 404 });
       }
+      lastAppearanceForSchedule = typeof people[0].last_appearance === "string" ? people[0].last_appearance : null;
       if (isJadwalCreate) {
         dataBaru = normalized;
         entityId = `j-${createHash("sha256").update(`${session.userId}:${JSON.stringify(normalized)}`).digest("hex").slice(0, 48)}`;
       } else {
-      const [rows] = await connection.query<RowDataPacket[]>("SELECT * FROM jadwal_siaran WHERE id = ? FOR UPDATE", [entityId]);
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT *, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal_iso, DATE_FORMAT(tanggal_baru, '%Y-%m-%d') AS tanggal_baru_iso FROM jadwal_siaran WHERE id = ? FOR UPDATE",
+        [entityId]
+      );
       const current = rows[0];
       if (!current) {
         await connection.rollback();
@@ -200,19 +211,38 @@ export async function POST(request: Request) {
       dataBaru = normalized;
       dataLama = {
         narasumberId: current.narasumber_id,
-        tanggal: dateString(current.tanggal),
+        tanggal: current.tanggal_iso ?? dateString(current.tanggal),
         waktu: current.waktu ?? "",
         program: current.program,
         jenisSiaran: current.jenis_siaran ?? "live",
         topik: current.topik ?? "",
         catatan: current.catatan ?? "",
         status: current.status,
-        tanggalBaru: current.tanggal_baru ? dateString(current.tanggal_baru) : "",
+        tanggalBaru: current.tanggal_baru_iso ?? (current.tanggal_baru ? dateString(current.tanggal_baru) : ""),
       };
       if (JSON.stringify(dataLama) === JSON.stringify(dataBaru)) {
         await connection.rollback();
         return NextResponse.json({ ok: false, message: "Tidak ada perubahan yang diajukan." }, { status: 400 });
       }
+      }
+    }
+
+    if (
+      (isJadwalCreate || isJadwalUpdate) &&
+      dataBaru.status === "dijadwalkan" &&
+      typeof dataBaru.narasumberId === "string" &&
+      typeof dataBaru.tanggal === "string"
+    ) {
+      const conflictMessage = await findDatabaseRotationConflict(
+        connection,
+        dataBaru.narasumberId,
+        lastAppearanceForSchedule,
+        dataBaru.tanggal,
+        isJadwalUpdate ? entityId : undefined
+      );
+      if (conflictMessage) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: conflictMessage }, { status: 409 });
       }
     }
 

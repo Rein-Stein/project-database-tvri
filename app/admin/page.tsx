@@ -13,6 +13,7 @@ import {
   getLastAppearance,
   getNarasumberStatus,
   getRemainingDays,
+  toIsoDate,
 } from "@/types";
 import { AdminSubNav, StatCard, JadwalBadge } from "@/components/admin/AdminUI";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -49,23 +50,23 @@ function DashboardContent() {
   const stats = useMemo(() => {
     let tersedia = 0, dalamJeda = 0, belumTampil = 0, totalSiaran = 0;
     for (const n of narasumberList) {
-      const last = getLastAppearance(n);
-      const st = getNarasumberStatus(last);
+      const last = getLastAppearance(n, jadwalList);
+      const st = getNarasumberStatus(last, waitingPeriod);
       if (st === "tersedia") tersedia++;
       else if (st === "dalam-jeda") dalamJeda++;
       else belumTampil++;
       totalSiaran += n.riwayat?.length ?? 0;
     }
     return { tersedia, dalamJeda, belumTampil, totalSiaran, total: narasumberList.length };
-  }, [narasumberList]);
+  }, [narasumberList, jadwalList, waitingPeriod]);
 
   const { jadwalHariIni, jadwalMingguIni } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayIso = today.toISOString().slice(0, 10);
+    const todayIso = toIsoDate(today);
     const endOfWeek = new Date(today);
     endOfWeek.setDate(today.getDate() + 7);
-    const endOfWeekIso = endOfWeek.toISOString().slice(0, 10);
+    const endOfWeekIso = toIsoDate(endOfWeek);
 
     const hariIni = jadwalList.filter((j) => j.tanggal === todayIso && j.status === "dijadwalkan");
     const mingguIni = jadwalList
@@ -91,35 +92,35 @@ function DashboardContent() {
 
     return narasumberList
       .filter((n) => {
-        const last = getLastAppearance(n);
-        const st = getNarasumberStatus(last);
+        const last = getLastAppearance(n, jadwalList);
+        const st = getNarasumberStatus(last, waitingPeriod);
         if (st !== "dalam-jeda") return false;
-        const end = getCooldownEnd(last);
+        const end = getCooldownEnd(last, waitingPeriod);
         return end && end <= in30;
       })
       .map((n) => {
-        const last = getLastAppearance(n);
-        const end = getCooldownEnd(last)!;
-        const sisa = getRemainingDays(last);
+        const last = getLastAppearance(n, jadwalList);
+        const end = getCooldownEnd(last, waitingPeriod)!;
+        const sisa = getRemainingDays(last, waitingPeriod);
         return { ...n, sisa, boleh: end.toISOString() };
       })
       .sort((a, b) => a.sisa - b.sisa)
       .slice(0, 5);
-  }, [narasumberList]);
+  }, [narasumberList, jadwalList, waitingPeriod]);
 
   const rekomendasi = useMemo(() => {
     return narasumberList
       .filter((n) => {
-        const st = getNarasumberStatus(getLastAppearance(n));
+        const st = getNarasumberStatus(getLastAppearance(n, jadwalList), waitingPeriod);
         return st === "tersedia" || st === "belum-tampil";
       })
       .sort((a, b) => {
-        const la = getLastAppearance(a) ?? "";
-        const lb = getLastAppearance(b) ?? "";
+        const la = getLastAppearance(a, jadwalList) ?? "";
+        const lb = getLastAppearance(b, jadwalList) ?? "";
         return la.localeCompare(lb);
       })
       .slice(0, 6);
-  }, [narasumberList]);
+  }, [narasumberList, jadwalList, waitingPeriod]);
 
   const getNama = (id: string) => narasumberList.find((n) => n.id === id)?.nama ?? id;
 
@@ -353,7 +354,7 @@ function DashboardContent() {
                 </thead>
                 <tbody>
                   {rekomendasi.map((n) => {
-                    const last = getLastAppearance(n);
+                    const last = getLastAppearance(n, jadwalList);
                     const st = getNarasumberStatus(last);
                     return (
                       <tr key={n.id}>

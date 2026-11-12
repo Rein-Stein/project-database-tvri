@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
-import { isJadwalSelesai, type JenisSiaran } from "@/types";
+import { isJadwalSelesai, toIsoDate, type JenisSiaran } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +18,13 @@ interface BroadcastData {
 }
 
 function dateString(value: unknown): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").slice(0, 10);
+  return value instanceof Date ? toIsoDate(value) : String(value ?? "").slice(0, 10);
 }
 
 function mapSchedule(row: RowDataPacket): BroadcastData {
   return {
     narasumberId: row.narasumber_id,
-    tanggal: dateString(row.tanggal),
+    tanggal: String(row.tanggal_iso ?? dateString(row.tanggal)).slice(0, 10),
     waktu: row.waktu ?? "",
     program: row.program,
     jenisSiaran: row.jenis_siaran ?? "live",
@@ -72,7 +72,10 @@ export async function POST(request: Request) {
     let data: BroadcastData;
     let scheduleId: string | null = null;
 
-      const [rows] = await connection.query<RowDataPacket[]>("SELECT * FROM jadwal_siaran WHERE id = ? FOR UPDATE", [body.jadwalId]);
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT *, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal_iso FROM jadwal_siaran WHERE id = ? FOR UPDATE",
+        [body.jadwalId]
+      );
       const schedule = rows[0];
       if (!schedule) {
         await connection.rollback();
@@ -88,22 +91,22 @@ export async function POST(request: Request) {
       }
       data = mapSchedule(schedule);
       scheduleId = schedule.id;
-      if (!isJadwalSelesai(data)) {
-        await connection.rollback();
-        return NextResponse.json({ ok: false, message: "Siaran belum berlangsung sehingga belum dapat dicatat." }, { status: 409 });
-      }
 
     {
       const historyId = `jadwal-${scheduleId}`;
       const [existingHistory] = await connection.query<RowDataPacket[]>("SELECT id FROM riwayat_siaran WHERE id = ? FOR UPDATE", [historyId]);
       if (existingHistory.length) {
-        await connection.query("UPDATE jadwal_siaran SET status = 'sudah-tampil' WHERE id = ?", [scheduleId]);
+        if (isJadwalSelesai(data)) {
+          await connection.query("UPDATE jadwal_siaran SET status = 'sudah-tampil' WHERE id = ?", [scheduleId]);
+        }
         await updateLastAppearance(connection, data.narasumberId);
         await connection.commit();
         return NextResponse.json({ ok: true, alreadyRecorded: true, scheduleId, message: "Siaran ini sudah tercatat." });
       }
       await insertHistory(connection, historyId, data);
-      await connection.query("UPDATE jadwal_siaran SET status = 'sudah-tampil' WHERE id = ?", [scheduleId]);
+      if (isJadwalSelesai(data)) {
+        await connection.query("UPDATE jadwal_siaran SET status = 'sudah-tampil' WHERE id = ?", [scheduleId]);
+      }
     }
 
     await connection.query(

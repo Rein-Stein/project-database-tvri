@@ -12,7 +12,11 @@ import {
 } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import {
+  collectPenampilan,
+  describeRotationConflict,
+  findRotationConflict,
   formatDate,
+  toIsoDate,
   type JadwalSiaran,
   type JadwalStatus,
 } from "@/types";
@@ -44,6 +48,13 @@ function JadwalContent() {
   const [editJadwal, setEditJadwal] = useState<JadwalSiaran | null>(null);
   const [catatJadwal, setCatatJadwal] = useState<JadwalSiaran | null>(null);
   const [undaTanggal, setUndaTanggal] = useState<{ id: string; val: string } | null>(null);
+  const [overrideAction, setOverrideAction] = useState<{
+    id: string;
+    action: "tunda" | "aktifkan" | "lanjutkan";
+    tanggal: string;
+    message: string;
+    alasan: string;
+  } | null>(null);
 
   const getNama = (id: string) => narasumberList.find((n) => n.id === id)?.nama ?? "-";
   const getInstansi = (id: string) =>
@@ -57,12 +68,12 @@ function JadwalContent() {
     const startOf = (offset: number) => {
       const d = new Date(today);
       d.setDate(d.getDate() - offset);
-      return d.toISOString().slice(0, 10);
+      return toIsoDate(d);
     };
 
     const periodeStartMap: Record<string, string> = {
       semua: "0000-01-01",
-      hari_ini: today.toISOString().slice(0, 10),
+      hari_ini: toIsoDate(today),
       minggu_ini: startOf(7),
       bulan_ini: startOf(30),
       tiga_bulan: startOf(90),
@@ -89,27 +100,71 @@ function JadwalContent() {
     setUndaTanggal({ id: j.id, val: j.tanggal });
   };
 
-  const konfirmasiTunda = (jadwalId: string, tanggalBaru: string) => {
-    if (!tanggalBaru) return;
-    setJadwalStatus(jadwalId, "ditunda", { tanggalBaru });
-    const n = jadwalList.find((j) => j.id === jadwalId);
-    addLog(`Tunda jadwal: ${getNama(n?.narasumberId ?? "")}`, `Tanggal baru: ${formatDate(tanggalBaru)}`);
-    showToast("Jadwal ditunda ke tanggal baru.", "info");
-    setUndaTanggal(null);
+  const applyScheduleAction = (
+    action: "tunda" | "aktifkan" | "lanjutkan",
+    jadwalId: string,
+    tanggal: string,
+    alasan?: string
+  ) => {
+    const jadwal = jadwalList.find((item) => item.id === jadwalId);
+    if (!jadwal) return;
+    const overrideLog = alasan ? ` [OVERRIDE: ${alasan}]` : "";
+    if (action === "tunda") {
+      setJadwalStatus(jadwalId, "ditunda", { tanggalBaru: tanggal });
+      addLog(`Tunda jadwal: ${getNama(jadwal.narasumberId)}${overrideLog}`, `Tanggal baru: ${formatDate(tanggal)}`);
+      showToast("Jadwal ditunda ke tanggal baru.", "info");
+      setUndaTanggal(null);
+      return;
+    }
+
+    setJadwalStatus(jadwalId, "dijadwalkan", tanggal !== jadwal.tanggal ? { tanggalBaru: tanggal } : undefined);
+    if (action === "aktifkan") {
+      addLog(`Aktifkan kembali jadwal: ${getNama(jadwal.narasumberId)}${overrideLog}`, `Tanggal: ${formatDate(tanggal)}`);
+      showToast(`Jadwal ${getNama(jadwal.narasumberId)} diaktifkan kembali.`, "success");
+    } else {
+      addLog(`Lanjutkan siaran: ${getNama(jadwal.narasumberId)}${overrideLog}`, `Jadwal aktif untuk tanggal: ${formatDate(tanggal)}`);
+      showToast(`Jadwal siaran ${getNama(jadwal.narasumberId)} dilanjutkan untuk tanggal ${formatDate(tanggal)}.`, "success");
+    }
   };
 
-  const handleAktifkanKembali = (j: JadwalSiaran) => {
-    setJadwalStatus(j.id, "dijadwalkan");
-    addLog(`Aktifkan kembali jadwal: ${getNama(j.narasumberId)}`, `Tanggal: ${formatDate(j.tanggal)}`);
-    showToast(`Jadwal ${getNama(j.narasumberId)} diaktifkan kembali.`, "success");
+  const requestScheduleAction = (
+    action: "tunda" | "aktifkan" | "lanjutkan",
+    jadwalId: string,
+    tanggal: string,
+    alasan?: string
+  ) => {
+    if (!tanggal) return;
+    const jadwal = jadwalList.find((item) => item.id === jadwalId);
+    const narasumber = narasumberList.find((item) => item.id === jadwal?.narasumberId);
+    if (!jadwal || !narasumber) return;
+    const conflict = findRotationConflict(
+      tanggal,
+      collectPenampilan(narasumber, jadwalList),
+      undefined,
+      [`jadwal-${jadwal.id}`]
+    );
+    if (conflict && !alasan?.trim()) {
+      setOverrideAction({
+        id: jadwalId,
+        action,
+        tanggal,
+        message: describeRotationConflict(conflict),
+        alasan: "",
+      });
+      return;
+    }
+    applyScheduleAction(action, jadwalId, tanggal, alasan?.trim());
+    setOverrideAction(null);
   };
 
-  const handleLanjutkanSiaran = (j: JadwalSiaran) => {
-    const tgl = j.tanggalBaru || j.tanggal;
-    setJadwalStatus(j.id, "dijadwalkan", j.tanggalBaru ? { tanggalBaru: j.tanggalBaru } : undefined);
-    addLog(`Lanjutkan siaran: ${getNama(j.narasumberId)}`, `Jadwal aktif untuk tanggal: ${formatDate(tgl)}`);
-    showToast(`Jadwal siaran ${getNama(j.narasumberId)} dilanjutkan untuk tanggal ${formatDate(tgl)}.`, "success");
-  };
+  const konfirmasiTunda = (jadwalId: string, tanggalBaru: string) =>
+    requestScheduleAction("tunda", jadwalId, tanggalBaru);
+
+  const handleAktifkanKembali = (jadwal: JadwalSiaran) =>
+    requestScheduleAction("aktifkan", jadwal.id, jadwal.tanggal);
+
+  const handleLanjutkanSiaran = (jadwal: JadwalSiaran) =>
+    requestScheduleAction("lanjutkan", jadwal.id, jadwal.tanggalBaru || jadwal.tanggal);
 
   const handleHapus = (j: JadwalSiaran) => {
     if (!confirm("Hapus jadwal ini secara permanen?")) return;
@@ -198,6 +253,40 @@ function JadwalContent() {
                 className="btn btn-primary"
               >
                 Simpan Tanggal Baru
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {overrideAction && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="surface w-full max-w-md p-5">
+            <h3 className="mb-2 text-[14px] font-semibold">Override Masa Tunggu</h3>
+            <p className="mb-3 text-[12px] text-[var(--warning)]">{overrideAction.message}</p>
+            <label className="block text-[12px] font-medium">
+              Alasan wajib
+              <textarea
+                className="field-input mt-1"
+                rows={3}
+                value={overrideAction.alasan}
+                onChange={(event) => setOverrideAction({ ...overrideAction, alasan: event.target.value })}
+                placeholder="Masukkan alasan pengecualian masa tunggu"
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setOverrideAction(null)} className="btn btn-outline">Batal</button>
+              <button
+                onClick={() => requestScheduleAction(
+                  overrideAction.action,
+                  overrideAction.id,
+                  overrideAction.tanggal,
+                  overrideAction.alasan
+                )}
+                disabled={!overrideAction.alasan.trim()}
+                className="btn btn-primary"
+              >
+                Lanjutkan Override
               </button>
             </div>
           </div>

@@ -69,6 +69,23 @@ describe("POST /api/siaran", () => {
     expect(mocks.commit).toHaveBeenCalledOnce();
   });
 
+  it("records a future schedule without prematurely changing its status", async () => {
+    const futureSchedule = { ...schedule, tanggal: "2099-09-26" };
+    mocks.query
+      .mockResolvedValueOnce([[futureSchedule]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    const response = await POST(request({ narasumberId: "n-1", jadwalId: "j-1" }));
+
+    expect(response.status).toBe(201);
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes("UPDATE jadwal_siaran"))).toBe(false);
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO riwayat_siaran"))).toBe(true);
+    expect(mocks.commit).toHaveBeenCalledOnce();
+  });
+
   it("does not insert a duplicate history record for a recorded schedule", async () => {
     mocks.query
       .mockResolvedValueOnce([[{ ...schedule, status: "sudah-tampil" }]])

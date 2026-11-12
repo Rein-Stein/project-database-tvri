@@ -9,9 +9,9 @@ import { Field, inputClass, textareaClass } from "@/components/admin/AdminUI";
 import {
   formatDate,
   getCooldownEnd,
-  isJadwalSelesai,
   getLastAppearance,
   getNarasumberStatus,
+  toIsoDate,
   type JadwalSiaran,
   type Narasumber,
 } from "@/types";
@@ -27,32 +27,25 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
   const { user } = useAuth();
   const { showToast } = useToast();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toIsoDate(new Date());
   const [selectedJadwalId, setSelectedJadwalId] = useState(jadwal?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const last = getLastAppearance(narasumber);
+  const last = getLastAppearance(narasumber, jadwalList);
   const status = getNarasumberStatus(last);
-  // Hanya jadwal milik narasumber ini yang BELUM tercatat di riwayat.
-  // Jadwal yang dibatalkan tidak dapat dicatat, dan jadwal masa depan
-  // belum boleh dicatat — riwayat hanya untuk siaran yang sudah terlaksana.
+  // Hanya jadwal milik narasumber ini yang belum tercatat dan tidak dibatalkan.
   const availableSchedules = jadwalList.filter((jadwal) =>
     jadwal.narasumberId === narasumber.id
     && jadwal.status !== "dibatalkan"
     && !narasumber.riwayat.some((history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id)
-    && isJadwalSelesai(jadwal)
   );
   const selectedSchedule = jadwal ?? availableSchedules.find((item) => item.id === selectedJadwalId);
 
   const handleSubmit = async () => {
     if (!selectedSchedule) {
       showToast("Pilih jadwal yang akan dicatat.", "error");
-      return;
-    }
-    if (!isJadwalSelesai(selectedSchedule)) {
-      showToast("Siaran belum berlangsung sehingga belum dapat dicatat.", "error");
       return;
     }
     setSaving(true);
@@ -131,7 +124,7 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
             }}
             aria-label="Pilih jadwal terkait"
           >
-            <option value="">Pilih jadwal yang sudah berlangsung</option>
+            <option value="">Pilih jadwal yang akan dicatat</option>
             {availableSchedules.map((schedule) => (
               <option key={schedule.id} value={schedule.id}>
                 {formatDate(schedule.tanggal)} · {schedule.waktu || "-"} · {schedule.program}
@@ -143,10 +136,8 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
         {selectedSchedule && <p className="mb-3 border-l-2 border-[var(--accent)] pl-3 text-[12px] text-[var(--muted-foreground)]">
           Menggunakan data jadwal {selectedSchedule.id}; tanggal, program, dan detail siaran akan diambil dari jadwal tersebut.
         </p>}
-        {availableSchedules.length === 0 && !jadwal && jadwalList.some((item) =>
-          item.narasumberId === narasumber.id && item.status === "dijadwalkan"
-        ) && <p className="mb-3 border-l-2 border-[var(--warning)] pl-3 text-[12px] text-[var(--muted-foreground)]">
-          Jadwal untuk narasumber ini sudah dibuat, tetapi waktunya belum terlaksana. Catat siaran hanya setelah waktu tayang terlewat.
+        {availableSchedules.length === 0 && !jadwal && <p className="mb-3 border-l-2 border-[var(--warning)] pl-3 text-[12px] text-[var(--muted-foreground)]">
+          Tidak ada jadwal yang belum tercatat untuk narasumber ini.
         </p>}
 
         {status === "dalam-jeda" && (

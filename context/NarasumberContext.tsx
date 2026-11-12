@@ -234,6 +234,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
   const [actor, setActor] = useState("Admin");
   const [databaseReady, setDatabaseReady] = useState(false);
   const [databaseStatus, setDatabaseStatus] = useState<"loading" | "ready" | "fallback" | "error">("loading");
+  const [, setStatusClock] = useState(0);
   const initialDatabaseLoad = useRef(true);
   const [waitingPeriod, setWaitingPeriod] = useState<WaitingPeriodSetting>(getCurrentWaitingPeriodSetting());
 
@@ -265,25 +266,58 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("tvri-waiting-period-changed", handleWaitingPeriodChange);
   }, []);
 
-  // Jadwal yang waktunya sudah lewat hanya ditandai lokal (tanpa menulis
-  // riwayat/database dari client). Riwayat resmi dibuat via /api/siaran
-  // (admin) atau approval change_requests (operator) dengan ID deterministik
-  // `jadwal-<id>` sehingga refresh tidak membuat history ganda.
+  // Perbarui status jadwal dan riwayat tertaut saat waktu tayang telah lewat.
   useEffect(() => {
     const markDueSchedules = () => {
       const now = new Date();
       setJadwalList((prevJadwal) => {
-        const dueIds = prevJadwal
-          .filter((jadwal) => jadwal.status === "dijadwalkan" && isJadwalSelesai(jadwal, now))
-          .map((jadwal) => jadwal.id);
-        if (dueIds.length === 0) return prevJadwal;
-        const dueSet = new Set(dueIds);
+        const dueSchedules = prevJadwal.filter(
+          (jadwal) => jadwal.status === "dijadwalkan" && isJadwalSelesai(jadwal, now)
+        );
+        if (dueSchedules.length === 0) return prevJadwal;
+        const dueSet = new Set(dueSchedules.map((jadwal) => jadwal.id));
         const nextJadwal = prevJadwal.map((jadwal) =>
           dueSet.has(jadwal.id) ? { ...jadwal, status: "sudah-tampil" as JadwalStatus } : jadwal
         );
         localStorage.setItem(JADWAL_KEY, JSON.stringify(nextJadwal));
+
+        setList((prevList) => {
+          let changed = false;
+          const nextList = prevList.map((narasumber) => {
+            const missingHistory = dueSchedules.filter(
+              (jadwal) =>
+                jadwal.narasumberId === narasumber.id &&
+                !narasumber.riwayat.some(
+                  (history) => history.id === `jadwal-${jadwal.id}` || history.jadwalId === jadwal.id
+                )
+            );
+            if (missingHistory.length === 0) return narasumber;
+            changed = true;
+            return {
+              ...narasumber,
+              riwayat: [
+                ...narasumber.riwayat,
+                ...missingHistory.map((jadwal) => ({
+                  id: `jadwal-${jadwal.id}`,
+                  jadwalId: jadwal.id,
+                  tanggal: jadwal.tanggal,
+                  waktu: jadwal.waktu,
+                  program: jadwal.program,
+                  jenisSiaran: jadwal.jenisSiaran ?? "live",
+                  topik: jadwal.topik,
+                  catatan: jadwal.catatan,
+                })),
+              ],
+            };
+          });
+          if (!changed) return prevList;
+          const recomputed = recompute(nextList);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(recomputed));
+          return recomputed;
+        });
         return nextJadwal;
       });
+      setStatusClock((value) => value + 1);
     };
 
     markDueSchedules();
@@ -462,7 +496,9 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(JADWAL_KEY, JSON.stringify(next));
 
       setList((prevList) => {
-        const hasLinkedHistory = prevList.some((n) => n.riwayat.some((history) => history.id === `jadwal-${id}`));
+        const hasLinkedHistory = prevList.some((n) =>
+          n.riwayat.some((history) => history.id === `jadwal-${id}` || history.jadwalId === id)
+        );
         if (updated.status !== "sudah-tampil" || hasLinkedHistory) return prevList;
 
         const withHistory = prevList.map((n) =>
@@ -522,13 +558,18 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
     setJadwalList((prevJadwal) => {
       const target = prevJadwal.find((j) => j.id === jadwalId);
       if (!target) return prevJadwal;
+      if (!isJadwalSelesai(target)) {
+        throw new Error("Jadwal belum melewati waktu tayang sehingga belum dapat ditandai sudah tampil.");
+      }
       const nextJadwal = prevJadwal.map((j) =>
         j.id === jadwalId ? { ...j, status: "sudah-tampil" as JadwalStatus } : j
       );
       localStorage.setItem(JADWAL_KEY, JSON.stringify(nextJadwal));
 
       setList((prevList) => {
-        if (prevList.some((n) => n.riwayat.some((history) => history.id === `jadwal-${jadwalId}`))) return prevList;
+        if (prevList.some((n) =>
+          n.riwayat.some((history) => history.id === `jadwal-${jadwalId}` || history.jadwalId === jadwalId)
+        )) return prevList;
         const next = recompute(
           prevList.map((n) =>
             n.id === target.narasumberId

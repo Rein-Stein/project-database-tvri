@@ -39,7 +39,7 @@ export default function AdminNarasumberPage() {
 }
 
 function NarasumberContent() {
-  const { narasumberList, removeNarasumber, resetKehadiran, addLog } = useNarasumber();
+  const { narasumberList, jadwalList, waitingPeriod, removeNarasumber, resetKehadiran, addLog } = useNarasumber();
   const { showToast } = useToast();
 
   const [query, setQuery] = useState("");
@@ -58,8 +58,8 @@ function NarasumberContent() {
     const q = query.toLowerCase().trim();
     return narasumberList
       .filter((n) => {
-        const last = getLastAppearance(n);
-        const st = getNarasumberStatus(last);
+        const last = getLastAppearance(n, jadwalList);
+        const st = getNarasumberStatus(last, waitingPeriod);
         if (filterStatus !== "semua" && st !== filterStatus) return false;
         if (instansiFilter !== "semua" && n.instansi !== instansiFilter) return false;
         if (!q) return true;
@@ -71,7 +71,7 @@ function NarasumberContent() {
         );
       })
       .sort((a, b) => a.nama.localeCompare(b.nama));
-  }, [narasumberList, query, filterStatus, instansiFilter]);
+  }, [narasumberList, jadwalList, waitingPeriod, query, filterStatus, instansiFilter]);
 
   const existingNames = narasumberList.map((n) => n.nama);
 
@@ -188,7 +188,7 @@ function NarasumberContent() {
             </thead>
             <tbody>
               {filtered.map((n) => {
-                const last = getLastAppearance(n);
+                const last = getLastAppearance(n, jadwalList);
                 const st = getNarasumberStatus(last);
                 const sisa = getRemainingDays(last);
                 const boleh = getCooldownEnd(last);

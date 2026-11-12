@@ -4,6 +4,9 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
+import { isJadwalSelesai } from "@/types";
+import { findDatabaseRotationConflict } from "@/lib/rotation";
+import { toIsoDate } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +25,14 @@ function session() {
 }
 
 function dateString(value: unknown): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").slice(0, 10);
+  return value instanceof Date ? toIsoDate(value) : String(value ?? "").slice(0, 10);
 }
 
 function isValidDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
 function narasumberData(value: ChangeRequestData): NarasumberChangeData | null {
@@ -136,6 +140,26 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "ID jadwal sudah digunakan. Pengajuan tidak dapat diterapkan." }, { status: 409 });
         }
+        if (data.status === "dijadwalkan") {
+          const [people] = await connection.query<RowDataPacket[]>(
+            "SELECT id, DATE_FORMAT(last_appearance, '%Y-%m-%d') AS last_appearance FROM narasumber WHERE id = ? FOR UPDATE",
+            [data.narasumberId]
+          );
+          if (!people.length) {
+            await connection.rollback();
+            return NextResponse.json({ ok: false, message: "Narasumber jadwal tidak ditemukan." }, { status: 409 });
+          }
+          const conflictMessage = await findDatabaseRotationConflict(
+            connection,
+            data.narasumberId,
+            typeof people[0].last_appearance === "string" ? people[0].last_appearance : null,
+            data.tanggal
+          );
+          if (conflictMessage) {
+            await connection.rollback();
+            return NextResponse.json({ ok: false, message: conflictMessage }, { status: 409 });
+          }
+        }
         await connection.query(
           "INSERT INTO jadwal_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan, status, tanggal_baru) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [change.entity_id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null]
@@ -147,26 +171,52 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "Data jadwal pada pengajuan tidak valid." }, { status: 409 });
         }
-        const [rows] = await connection.query<RowDataPacket[]>("SELECT * FROM jadwal_siaran WHERE id = ? FOR UPDATE", [change.entity_id]);
+        const [rows] = await connection.query<RowDataPacket[]>(
+          "SELECT *, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal_iso, DATE_FORMAT(tanggal_baru, '%Y-%m-%d') AS tanggal_baru_iso FROM jadwal_siaran WHERE id = ? FOR UPDATE",
+          [change.entity_id]
+        );
         const current = rows[0];
         const currentData: JadwalChangeData | null = current ? {
           narasumberId: current.narasumber_id,
-          tanggal: dateString(current.tanggal),
+          tanggal: current.tanggal_iso ?? dateString(current.tanggal),
           waktu: current.waktu ?? "",
           program: current.program,
           jenisSiaran: current.jenis_siaran ?? "live",
           topik: current.topik ?? "",
           catatan: current.catatan ?? "",
           status: current.status,
-          tanggalBaru: current.tanggal_baru ? dateString(current.tanggal_baru) : "",
+          tanggalBaru: current.tanggal_baru_iso ?? (current.tanggal_baru ? dateString(current.tanggal_baru) : ""),
         } : null;
         if (!currentData || JSON.stringify(currentData) !== JSON.stringify(old)) {
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "Data jadwal sudah berubah. Pengajuan perlu ditinjau ulang." }, { status: 409 });
         }
+        if (data.status === "dijadwalkan") {
+          const [people] = await connection.query<RowDataPacket[]>(
+            "SELECT id, DATE_FORMAT(last_appearance, '%Y-%m-%d') AS last_appearance FROM narasumber WHERE id = ? FOR UPDATE",
+            [data.narasumberId]
+          );
+          if (!people.length) {
+            await connection.rollback();
+            return NextResponse.json({ ok: false, message: "Narasumber jadwal tidak ditemukan." }, { status: 409 });
+          }
+          const conflictMessage = await findDatabaseRotationConflict(
+            connection,
+            data.narasumberId,
+            typeof people[0].last_appearance === "string" ? people[0].last_appearance : null,
+            data.tanggal,
+            change.entity_id
+          );
+          if (conflictMessage) {
+            await connection.rollback();
+            return NextResponse.json({ ok: false, message: conflictMessage }, { status: 409 });
+          }
+        }
+        const appliedStatus =
+          data.status === "sudah-tampil" && !isJadwalSelesai(data) ? "dijadwalkan" : data.status;
         await connection.query(
           "UPDATE jadwal_siaran SET narasumber_id = ?, tanggal = ?, waktu = ?, program = ?, jenis_siaran = ?, topik = ?, catatan = ?, status = ?, tanggal_baru = ? WHERE id = ?",
-          [data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null, change.entity_id]
+          [data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, appliedStatus, data.tanggalBaru || null, change.entity_id]
         );
         if (old.status !== "sudah-tampil" && data.status === "sudah-tampil") {
           const historyId = `jadwal-${change.entity_id}`;

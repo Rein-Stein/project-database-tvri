@@ -21,7 +21,7 @@ type SortKey = "nama" | "terakhir" | "paling-lama" | "paling-baru";
 
 export default function NarasumberListPage() {
   const router = useRouter();
-  const { narasumberList } = useNarasumber();
+  const { narasumberList, jadwalList, waitingPeriod } = useNarasumber();
   const [filter, setFilter] = useState<Filter>("semua");
   const [instansiFilter, setInstansiFilter] = useState("semua");
   const [bidangFilter, setBidangFilter] = useState("semua");
@@ -48,8 +48,8 @@ export default function NarasumberListPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const result = narasumberList.filter((n) => {
-      const last = getLastAppearance(n);
-      const status = getNarasumberStatus(last);
+      const last = getLastAppearance(n, jadwalList);
+      const status = getNarasumberStatus(last, waitingPeriod);
       if (filter !== "semua" && status !== filter) return false;
       if (instansiFilter !== "semua" && n.instansi !== instansiFilter) return false;
       if (bidangFilter !== "semua" && n.bidang !== bidangFilter) return false;
@@ -61,7 +61,7 @@ export default function NarasumberListPage() {
         (n.jabatan ?? "").toLowerCase().includes(q)
       );
     });
-    const lastOf = (n: (typeof result)[number]) => getLastAppearance(n);
+    const lastOf = (n: (typeof result)[number]) => getLastAppearance(n, jadwalList);
     switch (sort) {
       case "nama":
         return [...result].sort((a, b) => a.nama.localeCompare(b.nama));
@@ -71,12 +71,12 @@ export default function NarasumberListPage() {
       case "paling-lama":
         return [...result].sort((a, b) => (lastOf(a) ?? "0").localeCompare(lastOf(b) ?? "0"));
     }
-  }, [narasumberList, filter, instansiFilter, bidangFilter, sort, query]);
+  }, [narasumberList, jadwalList, waitingPeriod, filter, instansiFilter, bidangFilter, sort, query]);
 
   const countBy = (f: Filter) =>
     f === "semua"
       ? narasumberList.length
-      : narasumberList.filter((n) => getNarasumberStatus(getLastAppearance(n)) === f).length;
+      : narasumberList.filter((n) => getNarasumberStatus(getLastAppearance(n, jadwalList), waitingPeriod) === f).length;
 
   const filters: { key: Filter; label: string }[] = [
     { key: "semua", label: "Semua" },
@@ -182,7 +182,7 @@ export default function NarasumberListPage() {
             </thead>
             <tbody>
               {filtered.map((n) => {
-                const last = getLastAppearance(n);
+                const last = getLastAppearance(n, jadwalList);
                 const status = getNarasumberStatus(last);
                 const sisa = getRemainingDays(last);
                 const boleh = getCooldownEnd(last);

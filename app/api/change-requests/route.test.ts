@@ -82,6 +82,8 @@ describe("POST /api/change-requests", () => {
     mocks.connectionQuery
       .mockResolvedValueOnce([[{ id: "n-1" }]])
       .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([{ affectedRows: 1 }]);
     const first = await POST(request(body));
     const firstPayload = await first.json();
@@ -99,11 +101,41 @@ describe("POST /api/change-requests", () => {
     mocks.verifySessionToken.mockReturnValue({ userId: "operator-1", role: "operator", name: "Operator" });
     mocks.connectionQuery
       .mockResolvedValueOnce([[{ id: "n-1" }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[{ id: "existing" }]]);
     const retry = await POST(request(body));
 
     expect(retry.status).toBe(409);
-    expect(mocks.connectionQuery.mock.calls[1][1]).toContain(firstEntityId);
+    expect(mocks.connectionQuery.mock.calls[3][1]).toContain(firstEntityId);
     expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO change_requests"))).toBe(false);
+  });
+
+  it("rejects an operator schedule that conflicts with another scheduled appearance", async () => {
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
+      .mockResolvedValueOnce([[{
+        sumber: "jadwal", id: "j-existing", tanggal: "2026-11-17", program: "Dialog Pagi",
+      }]])
+      .mockResolvedValueOnce([[
+        { key: "waiting_period_value", value: "5" },
+        { key: "waiting_period_unit", value: "day" },
+      ]]);
+
+    const response = await POST(request({
+      entityType: "jadwal_siaran_create",
+      dataBaru: {
+        narasumberId: "n-1", tanggal: "2026-11-14", waktu: "10:00", program: "Dialog Siang",
+        jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+      },
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.message).toContain("17 November 2026");
+    expect(body.message).toContain("22 November 2026");
+    expect(String(mocks.connectionQuery.mock.calls[1][0])).toContain("DATE_FORMAT(tanggal, '%Y-%m-%d')");
+    expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO change_requests"))).toBe(false);
+    expect(mocks.rollback).toHaveBeenCalledOnce();
   });
 });

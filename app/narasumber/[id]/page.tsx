@@ -16,10 +16,10 @@ import { EmptyState } from "@/components/EmptyState";
 
 export default function DetailNarasumberPage({ params }: { params: { id: string } }) {
   const { id } = params;
-  const { narasumberList } = useNarasumber();
+  const { narasumberList, jadwalList } = useNarasumber();
   const n = narasumberList.find((x) => x.id === id);
 
-  const last = useMemo(() => (n ? getLastAppearance(n) : null), [n]);
+  const last = useMemo(() => (n ? getLastAppearance(n, jadwalList) : null), [n, jadwalList]);
   const riwayatSorted = useMemo(
     () => (n ? [...n.riwayat].sort((a, b) => b.tanggal.localeCompare(a.tanggal)) : []),
     [n]

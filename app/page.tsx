@@ -4,19 +4,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CalendarDays, CheckCircle2, FileText, Hourglass, Radio, Users } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
-import { formatDate, formatWaitingPeriod, getCurrentWaitingPeriodSetting, getNarasumberStatus, getRemainingDays } from "@/types";
+import { formatDate, formatWaitingPeriod, getCurrentWaitingPeriodSetting, getLastAppearance, getNarasumberStatus, getRemainingDays } from "@/types";
 import { StatusBadge } from "@/components/StatusBadge";
 import { DatabaseStatus } from "@/components/DatabaseStatus";
 
 export default function HomePage() {
   const router = useRouter();
-  const { narasumberList } = useNarasumber();
+  const { narasumberList, jadwalList } = useNarasumber();
   const waitingPeriodText = formatWaitingPeriod(getCurrentWaitingPeriodSetting());
-  const tersedia = narasumberList.filter((n) => getNarasumberStatus(n.lastAppearance) === "tersedia").length;
-  const dalamJeda = narasumberList.filter((n) => getNarasumberStatus(n.lastAppearance) === "dalam-jeda").length;
+  const tersedia = narasumberList.filter((n) => getNarasumberStatus(getLastAppearance(n, jadwalList)) === "tersedia").length;
+  const dalamJeda = narasumberList.filter((n) => getNarasumberStatus(getLastAppearance(n, jadwalList)) === "dalam-jeda").length;
   const belumTampil = narasumberList.length - tersedia - dalamJeda;
   const terbaru = [...narasumberList]
-    .sort((a, b) => (b.lastAppearance ?? "").localeCompare(a.lastAppearance ?? ""))
+    .sort((a, b) => (getLastAppearance(b, jadwalList) ?? "").localeCompare(getLastAppearance(a, jadwalList) ?? ""))
     .slice(0, 8);
   const stats = [
     { label: "Total Narasumber", value: narasumberList.length, icon: Users, color: "text-[var(--accent)]" },
@@ -74,7 +74,7 @@ export default function HomePage() {
           <div className="overflow-x-auto">
             <table className="data-table">
               <thead><tr><th>Nama</th><th>Jabatan</th><th>Bidang</th><th>Instansi</th><th>Terakhir Siaran</th><th>Status</th></tr></thead>
-              <tbody>{terbaru.map((n) => { const status = getNarasumberStatus(n.lastAppearance); return <tr key={n.id} tabIndex={0} role="link" onClick={() => router.push(`/narasumber/${n.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/narasumber/${n.id}`); } }} className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"><td><span className="font-semibold hover:text-[var(--accent)]">{n.nama}</span></td><td className="text-[var(--muted-foreground)]">{n.jabatan || "-"}</td><td>{n.bidang}</td><td className="text-[var(--muted-foreground)]">{n.instansi}</td><td className="whitespace-nowrap">{formatDate(n.lastAppearance)}</td><td><StatusBadge status={status} sisa={status === "dalam-jeda" ? getRemainingDays(n.lastAppearance) : undefined} /></td></tr>; })}</tbody>
+              <tbody>{terbaru.map((n) => { const last = getLastAppearance(n, jadwalList); const status = getNarasumberStatus(last); return <tr key={n.id} tabIndex={0} role="link" onClick={() => router.push(`/narasumber/${n.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/narasumber/${n.id}`); } }} className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"><td><span className="font-semibold hover:text-[var(--accent)]">{n.nama}</span></td><td className="text-[var(--muted-foreground)]">{n.jabatan || "-"}</td><td>{n.bidang}</td><td className="text-[var(--muted-foreground)]">{n.instansi}</td><td className="whitespace-nowrap">{formatDate(last)}</td><td><StatusBadge status={status} sisa={status === "dalam-jeda" ? getRemainingDays(last) : undefined} /></td></tr>; })}</tbody>
             </table>
           </div>
         </div>

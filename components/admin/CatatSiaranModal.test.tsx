@@ -1,9 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { isJadwalSelesai } from "@/types";
+import { describe, expect, it } from "vitest";
 import type { JadwalSiaran } from "@/types";
 
 describe("penyelarasan Jadwal Siaran → Catat Siaran", () => {
-  it("hanya menawarkan jadwal yang sudah terlaksana untuk dicatat", () => {
+  it("jadwal dijadwalkan tetap dapat dipilih sebelum waktu tayang", () => {
     const past: JadwalSiaran = {
       id: "j-lalu", narasumberId: "n-1", tanggal: "2020-01-01", waktu: "09:00",
       program: "Dialog Pagi", status: "dijadwalkan",
@@ -12,8 +11,12 @@ describe("penyelarasan Jadwal Siaran → Catat Siaran", () => {
       id: "j-depan", narasumberId: "n-1", tanggal: "2099-01-01", waktu: "09:00",
       program: "Dialog Pagi", status: "dijadwalkan",
     };
-    const recordable = [past, future].filter((jadwal) => isJadwalSelesai(jadwal));
-    expect(recordable.map((j) => j.id)).toEqual(["j-lalu"]);
+    const riwayat = [{ id: `jadwal-${past.id}` }];
+    const selectable = [past, future].filter((jadwal) =>
+      jadwal.status !== "dibatalkan"
+      && !riwayat.some((history) => history.id === `jadwal-${jadwal.id}`)
+    );
+    expect(selectable.map((j) => j.id)).toEqual(["j-depan"]);
   });
 
   it("jadwal yang sudah tercatat tidak muncul lagi (tidak ada riwayat ganda)", () => {

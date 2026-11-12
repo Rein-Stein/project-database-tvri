@@ -8,11 +8,12 @@ import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import { Field, inputClass, textareaClass } from "@/components/admin/AdminUI";
 import {
+  collectPenampilan,
+  describeRotationConflict,
+  findRotationConflict,
+  toIsoDate,
   formatDate,
-  getCooldownEnd,
-  getLastAppearance,
-  getNarasumberStatus,
-  getRemainingDays,
+  isJadwalSelesai,
   type JenisSiaran,
   type JadwalSiaran,
 } from "@/types";
@@ -27,7 +28,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   const { user } = useAuth();
   const { showToast } = useToast();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toIsoDate(new Date());
   const [narasumberId, setNarasumberId] = useState(existing?.narasumberId ?? "");
   const [tanggal, setTanggal] = useState(existing?.tanggal ?? today);
   const [waktu, setWaktu] = useState(existing?.waktu ?? "");
@@ -43,19 +44,18 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   useEffect(() => setMounted(true), []);
 
   const selectedNarasumber = narasumberList.find((n) => n.id === narasumberId);
-  const last = selectedNarasumber ? getLastAppearance(selectedNarasumber) : null;
-  const status = selectedNarasumber ? getNarasumberStatus(last) : null;
-  const cooldownEnd = getCooldownEnd(last);
-  const sisa = getRemainingDays(last);
-  const isInJeda = status === "dalam-jeda";
-
-  const hasDoubleBooking =
-    !existing &&
-    !!narasumberId &&
-    !!tanggal &&
-    jadwalList.some(
-      (j) => j.narasumberId === narasumberId && j.tanggal === tanggal && j.status === "dijadwalkan"
-    );
+  const isOperator = user?.role === "operator";
+  const checksWaitingPeriod = !existing || statusJadwal === "dijadwalkan";
+  const rotationConflict =
+    checksWaitingPeriod && selectedNarasumber && tanggal
+      ? findRotationConflict(
+          tanggal,
+          collectPenampilan(selectedNarasumber, jadwalList),
+          undefined,
+          existing ? [`jadwal-${existing.id}`] : []
+        )
+      : null;
+  const rotationMessage = rotationConflict ? describeRotationConflict(rotationConflict) : "";
 
   const doSave = async (withOverride = false) => {
     if (!narasumberId || !tanggal || !program.trim()) {
@@ -64,6 +64,10 @@ export function JadwalFormModal({ existing, onClose }: Props) {
     }
     if (withOverride && !overrideAlasan.trim()) {
       showToast("Harap isi alasan override.", "error");
+      return;
+    }
+    if (withOverride && user?.role !== "admin") {
+      showToast("Hanya Admin yang dapat memberikan override masa tunggu.", "error");
       return;
     }
     setSaving(true);
@@ -115,7 +119,8 @@ export function JadwalFormModal({ existing, onClose }: Props) {
         catatan: catatan.trim() || undefined,
         status: statusJadwal,
       });
-      addLog(`Edit jadwal: ${nama}`, `Tanggal: ${formatDate(tanggal)}, Program: ${program.trim()}, Status: ${statusJadwal}`);
+      const overrideNote = withOverride ? ` [OVERRIDE: ${overrideAlasan.trim()}]` : "";
+      addLog(`Edit jadwal: ${nama}${overrideNote}`, `Tanggal: ${formatDate(tanggal)}, Program: ${program.trim()}, Status: ${statusJadwal}`);
       showToast(`Jadwal ${nama} berhasil diperbarui.`, "success");
     } else {
       addJadwal({
@@ -136,11 +141,15 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   };
 
   const handleSubmit = () => {
-    if (hasDoubleBooking) {
-      showToast("Narasumber sudah memiliki jadwal pada tanggal tersebut.", "error");
+    if (statusJadwal === "sudah-tampil" && !isJadwalSelesai({ tanggal, waktu })) {
+      showToast("Jadwal belum melewati waktu tayang sehingga belum dapat ditandai sudah tampil.", "error");
       return;
     }
-    if (isInJeda && !existing) {
+    if (rotationConflict) {
+      if (isOperator) {
+        showToast("Jadwal melanggar masa tunggu. Hubungi Admin jika perlu pengecualian.", "error");
+        return;
+      }
       setShowOverride(true);
       return;
     }
@@ -161,22 +170,13 @@ export function JadwalFormModal({ existing, onClose }: Props) {
           </h2>
         </header>
 
-        {hasDoubleBooking && (
-          <div className="mb-3 flex items-start gap-2 border border-[var(--danger)] bg-[#fbecec] p-2 text-[12px] text-[var(--danger)]">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-            <span>Narasumber sudah memiliki jadwal pada tanggal ini. Pilih tanggal lain atau narasumber lain.</span>
-          </div>
-        )}
-
-        {isInJeda && narasumberId && !showOverride && (
+        {rotationConflict && !showOverride && (
           <div className="mb-3 flex items-start gap-2 border border-[var(--warning)] bg-[#fdf6e3] p-2 text-[12px] text-[var(--warning)]">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold">Narasumber masih dalam masa tunggu</p>
-              <p>
-                Terakhir tampil: <b>{formatDate(last)}</b> · Boleh kembali:{" "}
-                <b>{cooldownEnd ? formatDate(cooldownEnd.toISOString()) : "—"}</b> · Sisa: {sisa} hari
-              </p>
+              <p className="font-semibold">Jadwal ini melanggar masa tunggu narasumber</p>
+              <p>{rotationMessage}</p>
+              {isOperator && <p className="mt-1">Hubungi Admin jika perlu pengecualian.</p>}
             </div>
           </div>
         )}
@@ -185,7 +185,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
           <div className="mb-3 border border-[var(--warning)] bg-[#fdf6e3] p-3 text-[12px]">
             <p className="font-semibold text-[var(--warning)]">Peringatan — Override Masa Tunggu</p>
             <p className="mt-1 text-[var(--foreground)]">
-              Narasumber masih dalam masa tunggu ({sisa} hari lagi). Wajib berikan alasan override.
+              {rotationMessage} Wajib berikan alasan override.
             </p>
             <textarea
               className={`mt-2 ${textareaClass}`}
@@ -198,7 +198,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
             <div className="mt-2 flex gap-2">
               <button
                 onClick={() => doSave(true)}
-                disabled={saving || !overrideAlasan.trim()}
+                disabled={saving || !overrideAlasan.trim() || user?.role !== "admin"}
                 className="btn btn-primary !h-7 !px-2 !text-[11px]"
               >
                 Lanjutkan Override
@@ -255,7 +255,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
                     <option value="dijadwalkan">Dijadwalkan (Aktif)</option>
                     <option value="ditunda">Ditunda</option>
                     <option value="dibatalkan">Dibatalkan</option>
-                    <option value="sudah-tampil">Sudah Tampil</option>
+                    <option value="sudah-tampil" disabled={!isJadwalSelesai({ tanggal, waktu })}>Sudah Tampil</option>
                   </select>
                 </Field>
               )}
@@ -283,7 +283,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={saving || !!hasDoubleBooking}
+                disabled={saving}
                 className="btn btn-primary w-full sm:w-auto"
               >
                 {saving ? "Menyimpan..." : existing && user?.role === "operator" ? "Ajukan Perubahan" : existing ? "Simpan Perubahan" : "Buat Jadwal"}

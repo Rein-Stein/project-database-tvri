@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
-import { formatDate, getLastAppearance, getNarasumberStatus, JENIS_SIARAN_LABEL } from "@/types";
+import { formatDate, getLastAppearance, getNarasumberStatus, JENIS_SIARAN_LABEL, toIsoDate } from "@/types";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminSubNav, StatCard } from "@/components/admin/AdminUI";
 import { cn, escapeCsvCell } from "@/lib/utils";
@@ -13,8 +13,8 @@ type Periode = "bulan_ini" | "tiga_bulan" | "enam_bulan" | "tahun_ini" | "semua"
 function getPeriodeStart(p: Periode): string {
   const now = new Date();
   if (p === "bulan_ini") return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  if (p === "tiga_bulan") { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); }
-  if (p === "enam_bulan") { const d = new Date(now); d.setMonth(d.getMonth() - 6); return d.toISOString().slice(0, 10); }
+  if (p === "tiga_bulan") { const d = new Date(now); d.setMonth(d.getMonth() - 3); return toIsoDate(d); }
+  if (p === "enam_bulan") { const d = new Date(now); d.setMonth(d.getMonth() - 6); return toIsoDate(d); }
   if (p === "tahun_ini") return `${now.getFullYear()}-01-01`;
   return "0000-01-01";
 }
@@ -24,7 +24,7 @@ export default function LaporanPage() {
 }
 
 function LaporanContent() {
-  const { narasumberList } = useNarasumber();
+  const { narasumberList, jadwalList, waitingPeriod } = useNarasumber();
   const [periode, setPeriode] = useState<Periode>("tahun_ini");
 
   const startDate = getPeriodeStart(periode);
@@ -40,13 +40,13 @@ function LaporanContent() {
   const stats = useMemo(() => {
     let tersedia = 0, dalamJeda = 0, belumTampil = 0;
     for (const n of narasumberList) {
-      const st = getNarasumberStatus(getLastAppearance(n));
+      const st = getNarasumberStatus(getLastAppearance(n, jadwalList), waitingPeriod);
       if (st === "tersedia") tersedia++;
       else if (st === "dalam-jeda") dalamJeda++;
       else belumTampil++;
     }
     return { total: narasumberList.length, tersedia, dalamJeda, belumTampil, totalSiaran: riwayatFiltered.length };
-  }, [narasumberList, riwayatFiltered]);
+  }, [narasumberList, jadwalList, waitingPeriod, riwayatFiltered]);
 
   const perBulan = useMemo(() => {
     const map: Record<string, number> = {};
@@ -100,7 +100,7 @@ function LaporanContent() {
   const handleExportDaftar = () => {
     const header = "Nama,Instansi,Jabatan,Bidang,Kontak,Total Siaran,Terakhir Tampil,Status\n";
     const rows = narasumberList.map((n) => {
-      const last = getLastAppearance(n);
+      const last = getLastAppearance(n, jadwalList);
       const st = getNarasumberStatus(last);
       const stLabel = st === "tersedia" ? "Boleh Diundang" : st === "dalam-jeda" ? "Dalam Masa Tunggu" : "Belum Pernah Tampil";
       return [n.nama, n.instansi, n.jabatan ?? "", n.bidang, n.phone ?? "", n.riwayat?.length ?? 0, formatDate(last), stLabel]

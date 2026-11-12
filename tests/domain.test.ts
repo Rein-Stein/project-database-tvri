@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   addMonths,
+  collectPenampilan,
+  findRotationConflict,
   getCooldownEnd,
+  getLastAppearance,
   getNarasumberStatus,
   getRemainingDays,
   isJadwalSelesai,
@@ -43,9 +46,68 @@ describe("aturan jeda narasumber", () => {
   });
 
   it("menentukan jadwal selesai setelah waktu tayang lewat", () => {
-    expect(isJadwalSelesai({ tanggal: "2026-09-09", waktu: "10:00" }, new Date("2026-09-09T10:01:00"))).toBe(true);
-    expect(isJadwalSelesai({ tanggal: "2026-09-09", waktu: "10:00" }, new Date("2026-09-09T09:59:00"))).toBe(false);
-    expect(isJadwalSelesai({ tanggal: "2026-09-08" }, new Date("2026-09-09T00:00:00"))).toBe(true);
+    expect(isJadwalSelesai({ tanggal: "2026-09-09", waktu: "10:00" }, new Date("2026-09-09T10:01:00+08:00"))).toBe(true);
+    expect(isJadwalSelesai({ tanggal: "2026-09-09", waktu: "10:00" }, new Date("2026-09-09T09:59:00+08:00"))).toBe(false);
+    expect(isJadwalSelesai({ tanggal: "2026-09-08" }, new Date("2026-09-09T00:00:00+08:00"))).toBe(true);
+  });
+
+  it("menghitung bentrok jadwal dua arah dengan masa tunggu hari", () => {
+    const narasumber = { id: "n1", lastAppearance: null, riwayat: [] };
+    const schedules = [{
+      id: "j1", narasumberId: "n1", tanggal: "2026-11-17", program: "Dialog Pagi", status: "dijadwalkan" as const,
+    }];
+    const appearances = collectPenampilan(narasumber, schedules);
+    const fiveDays = { value: 5, unit: "day" as const };
+
+    for (const date of ["2026-11-14", "2026-11-13", "2026-11-21", "2026-11-17"]) {
+      expect(findRotationConflict(date, appearances, fiveDays), date).not.toBeNull();
+    }
+    for (const date of ["2026-11-12", "2026-11-22"]) {
+      expect(findRotationConflict(date, appearances, fiveDays), date).toBeNull();
+    }
+    expect(findRotationConflict("2026-11-14", collectPenampilan(
+      { ...narasumber, id: "n2" },
+      schedules
+    ), fiveDays)).toBeNull();
+  });
+
+  it("menggunakan masa tunggu bulan dan mengecualikan jadwal yang diedit", () => {
+    const narasumber = {
+      id: "n1",
+      lastAppearance: null,
+      riwayat: [],
+    };
+    const appearances = collectPenampilan(narasumber, [{
+      id: "j1", narasumberId: "n1", tanggal: "2026-11-16", program: "Dialog Pagi", status: "dijadwalkan",
+    }]);
+    const threeMonths = { value: 3, unit: "month" as const };
+    expect(findRotationConflict("2026-11-18", appearances, threeMonths)).not.toBeNull();
+    expect(findRotationConflict("2027-02-15", appearances, threeMonths)).not.toBeNull();
+    expect(findRotationConflict("2027-02-16", appearances, threeMonths)).toBeNull();
+    expect(findRotationConflict("2026-11-18", appearances, threeMonths, ["jadwal-j1"])).toBeNull();
+  });
+
+  it("mengabaikan jadwal dibatalkan atau ditunda dan menghitung status dari jadwal mendatang", () => {
+    const narasumber = { id: "n1", lastAppearance: null, riwayat: [] };
+    const appearances = collectPenampilan(narasumber, [
+      { id: "j1", narasumberId: "n1", tanggal: "2026-12-01", program: "Batal", status: "dibatalkan" },
+      { id: "j2", narasumberId: "n1", tanggal: "2026-12-02", program: "Tunda", status: "ditunda" },
+    ]);
+    expect(appearances).toHaveLength(0);
+    expect(getLastAppearance(narasumber, [
+      { id: "j3", narasumberId: "n1", tanggal: "2026-11-17", status: "dijadwalkan" },
+    ])).toBe("2026-11-17");
+  });
+
+  it("menghitung ulang status sesuai masa tunggu yang baru", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-12T12:00:00"));
+    try {
+      expect(getNarasumberStatus("2026-11-07", { value: 3, unit: "month" })).toBe("dalam-jeda");
+      expect(getNarasumberStatus("2026-11-07", { value: 5, unit: "day" })).toBe("tersedia");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

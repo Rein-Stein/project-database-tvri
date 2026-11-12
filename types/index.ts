@@ -136,7 +136,7 @@ export interface JadwalSiaran {
 
 /** Menentukan apakah jadwal sudah melewati tanggal dan jam tayangnya. */
 export function isJadwalSelesai(jadwal: Pick<JadwalSiaran, "tanggal" | "waktu">, now: Date = new Date()): boolean {
-  const scheduledAt = new Date(`${jadwal.tanggal}T${jadwal.waktu || "23:59"}:00`);
+  const scheduledAt = new Date(`${jadwal.tanggal}T${jadwal.waktu || "23:59"}:00+08:00`);
   return scheduledAt.getTime() <= now.getTime();
 }
 
@@ -163,9 +163,137 @@ export interface Narasumber {
 }
 
 /** Fungsi pusat rotasi: terakhir tampil = tanggal siaran terbaru dari riwayat */
-export function getLastAppearance(n: Pick<Narasumber, "riwayat" | "lastAppearance">): string | null {
-  const dates = (n.riwayat || []).map((r) => r.tanggal).sort();
-  return dates.length > 0 ? dates[dates.length - 1] : (n.lastAppearance ?? null);
+export function getLastAppearance(
+  n: Pick<Narasumber, "id" | "riwayat" | "lastAppearance">,
+  jadwalList: Pick<JadwalSiaran, "id" | "narasumberId" | "tanggal" | "status">[] = []
+): string | null {
+  const dates = (n.riwayat || []).map((r) => r.tanggal.slice(0, 10));
+  if (dates.length === 0 && n.lastAppearance) dates.push(n.lastAppearance.slice(0, 10));
+  for (const jadwal of jadwalList) {
+    if (jadwal.narasumberId === n.id && jadwal.status === "dijadwalkan") {
+      dates.push(jadwal.tanggal.slice(0, 10));
+    }
+  }
+  dates.sort();
+  return dates.length > 0 ? dates[dates.length - 1] : null;
+}
+
+export interface Penampilan {
+  id: string;
+  tanggal: string;
+  sumber: "riwayat" | "jadwal";
+  program?: string;
+}
+
+export interface RotationConflict {
+  penampilan: Penampilan;
+  arah: "sesudah" | "sebelum";
+  bolehMulai: string;
+  bolehSampai?: string;
+}
+
+export function toIsoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export function collectPenampilan(
+  narasumber: Pick<Narasumber, "id" | "riwayat" | "lastAppearance">,
+  jadwalList: Pick<JadwalSiaran, "id" | "narasumberId" | "tanggal" | "program" | "status">[]
+): Penampilan[] {
+  const penampilan: Penampilan[] = (narasumber.riwayat || []).map((riwayat) => ({
+    id: riwayat.id,
+    tanggal: riwayat.tanggal.slice(0, 10),
+    sumber: "riwayat",
+    program: riwayat.program,
+  }));
+  if (penampilan.length === 0 && narasumber.lastAppearance) {
+    penampilan.push({
+      id: `terakhir-${narasumber.id}`,
+      tanggal: narasumber.lastAppearance.slice(0, 10),
+      sumber: "riwayat",
+    });
+  }
+  for (const jadwal of jadwalList) {
+    if (jadwal.narasumberId === narasumber.id && jadwal.status === "dijadwalkan") {
+      penampilan.push({
+        id: `jadwal-${jadwal.id}`,
+        tanggal: jadwal.tanggal.slice(0, 10),
+        sumber: "jadwal",
+        program: jadwal.program,
+      });
+    }
+  }
+  return penampilan;
+}
+
+export function findRotationConflict(
+  tanggal: string,
+  penampilan: Penampilan[],
+  setting: WaitingPeriodSetting | undefined = undefined,
+  excludeIds: string[] = []
+): RotationConflict | null {
+  const { value, unit } = normalizeWaitingPeriod(setting ?? getCurrentWaitingPeriodSetting());
+  const target = tanggal.slice(0, 10);
+  if (!target) return null;
+  const targetEnd = toIsoDate(addCalendarOffset(target, value, unit));
+  const targetTime = new Date(`${target}T00:00:00`).getTime();
+  let nearest: Penampilan | null = null;
+  let nearestGap = Infinity;
+
+  for (const item of penampilan) {
+    if (excludeIds.includes(item.id)) continue;
+    const otherDate = item.tanggal.slice(0, 10);
+    const otherEnd = toIsoDate(addCalendarOffset(otherDate, value, unit));
+    if (target < otherEnd && otherDate < targetEnd) {
+      const gap = Math.abs(new Date(`${otherDate}T00:00:00`).getTime() - targetTime);
+      if (gap < nearestGap) {
+        nearest = item;
+        nearestGap = gap;
+      }
+    }
+  }
+
+  if (!nearest) return null;
+  const otherDate = nearest.tanggal.slice(0, 10);
+  const bolehMulai = toIsoDate(addCalendarOffset(otherDate, value, unit));
+  if (otherDate <= target) return { penampilan: nearest, arah: "sesudah", bolehMulai };
+
+  let bolehSampaiDate = addCalendarOffset(otherDate, -value, unit);
+  while (toIsoDate(addCalendarOffset(toIsoDate(bolehSampaiDate), value, unit)) > otherDate) {
+    bolehSampaiDate.setDate(bolehSampaiDate.getDate() - 1);
+  }
+  for (;;) {
+    const next = new Date(bolehSampaiDate);
+    next.setDate(next.getDate() + 1);
+    if (toIsoDate(addCalendarOffset(toIsoDate(next), value, unit)) <= otherDate) {
+      bolehSampaiDate = next;
+    } else {
+      break;
+    }
+  }
+  return {
+    penampilan: nearest,
+    arah: "sebelum",
+    bolehMulai,
+    bolehSampai: toIsoDate(bolehSampaiDate),
+  };
+}
+
+export function describeRotationConflict(
+  conflict: RotationConflict,
+  setting: WaitingPeriodSetting | undefined = undefined
+): string {
+  const normalized = normalizeWaitingPeriod(setting ?? getCurrentWaitingPeriodSetting());
+  const item = conflict.penampilan;
+  const source = item.sumber === "jadwal" ? "sudah dijadwalkan" : "pernah tampil";
+  const program = item.program ? ` (${item.program})` : "";
+  const period = formatWaitingPeriod(normalized);
+  if (conflict.arah === "sesudah") {
+    return `Narasumber ini ${source} pada ${formatDate(item.tanggal)}${program}. Masa tunggu ${period}, jadi baru boleh dijadwalkan mulai ${formatDate(conflict.bolehMulai)}.`;
+  }
+  return `Narasumber ini ${source} pada ${formatDate(item.tanggal)}${program}, terlalu dekat dengan tanggal yang dipilih. Masa tunggu ${period}: pilih tanggal paling lambat ${formatDate(conflict.bolehSampai ?? null)} atau mulai ${formatDate(conflict.bolehMulai)}.`;
 }
 
 /** Tanggal boleh diundang kembali = terakhir tampil + masa tunggu yang dikonfigurasi.
