@@ -14,6 +14,7 @@ const adminNav = [
   { href: "/admin/laporan", label: "Laporan" },
   { href: "/admin/persetujuan", label: "Persetujuan Perubahan" },
   { href: "/admin/users/login", label: "Manajemen Akun" },
+  { href: "/admin/program", label: "Program" },
   { href: "/admin/settings", label: "Pengaturan" },
 ];
 

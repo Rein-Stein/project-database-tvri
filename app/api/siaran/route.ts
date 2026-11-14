@@ -12,6 +12,7 @@ interface BroadcastData {
   tanggal: string;
   waktu: string;
   program: string;
+  programId: string | null;
   jenisSiaran: JenisSiaran;
   topik: string;
   catatan: string;
@@ -27,6 +28,7 @@ function mapSchedule(row: RowDataPacket): BroadcastData {
     tanggal: String(row.tanggal_iso ?? dateString(row.tanggal)).slice(0, 10),
     waktu: row.waktu ?? "",
     program: row.program,
+    programId: row.program_id ?? null,
     jenisSiaran: row.jenis_siaran ?? "live",
     topik: row.topik ?? "",
     catatan: row.catatan ?? "",
@@ -46,8 +48,8 @@ async function insertHistory(
   data: BroadcastData
 ) {
   await connection.query(
-    "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null]
+    "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, program_id, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.programId, data.jenisSiaran, data.topik || null, data.catatan || null]
   );
   await updateLastAppearance(connection, data.narasumberId);
 }

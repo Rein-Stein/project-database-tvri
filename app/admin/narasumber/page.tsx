@@ -13,20 +13,18 @@ import {
 import { useNarasumber } from "@/context/NarasumberContext";
 import {
   formatDate,
-  getCooldownEnd,
   getLastAppearance,
-  getNarasumberStatus,
-  getRemainingDays,
   type Narasumber,
   type NarasumberStatus,
 } from "@/types";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminSubNav } from "@/components/admin/AdminUI";
-import { StatusBadge } from "@/components/StatusBadge";
+import { NarasumberStatusBadge } from "@/components/NarasumberStatusBadge";
 import { NarasumberFormModal } from "@/components/admin/NarasumberFormModal";
 import { CatatSiaranModal } from "@/components/admin/CatatSiaranModal";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
+import { getNarasumberStatusInfo } from "@/lib/narasumber-status";
 
 type FilterStatus = "semua" | NarasumberStatus;
 
@@ -39,7 +37,7 @@ export default function AdminNarasumberPage() {
 }
 
 function NarasumberContent() {
-  const { narasumberList, jadwalList, waitingPeriod, removeNarasumber, resetKehadiran, addLog } = useNarasumber();
+  const { narasumberList, jadwalList, programList, waitingPeriod, removeNarasumber, resetKehadiran, addLog } = useNarasumber();
   const { showToast } = useToast();
 
   const [query, setQuery] = useState("");
@@ -58,8 +56,7 @@ function NarasumberContent() {
     const q = query.toLowerCase().trim();
     return narasumberList
       .filter((n) => {
-        const last = getLastAppearance(n, jadwalList);
-        const st = getNarasumberStatus(last, waitingPeriod);
+        const st = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod).status;
         if (filterStatus !== "semua" && st !== filterStatus) return false;
         if (instansiFilter !== "semua" && n.instansi !== instansiFilter) return false;
         if (!q) return true;
@@ -71,7 +68,7 @@ function NarasumberContent() {
         );
       })
       .sort((a, b) => a.nama.localeCompare(b.nama));
-  }, [narasumberList, jadwalList, waitingPeriod, query, filterStatus, instansiFilter]);
+  }, [narasumberList, jadwalList, programList, waitingPeriod, query, filterStatus, instansiFilter]);
 
   const existingNames = narasumberList.map((n) => n.nama);
 
@@ -189,9 +186,8 @@ function NarasumberContent() {
             <tbody>
               {filtered.map((n) => {
                 const last = getLastAppearance(n, jadwalList);
-                const st = getNarasumberStatus(last);
-                const sisa = getRemainingDays(last);
-                const boleh = getCooldownEnd(last);
+                const statusInfo = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod);
+                const st = statusInfo.status;
                 return (
                   <tr key={n.id}>
                     <td>
@@ -217,14 +213,14 @@ function NarasumberContent() {
                     <td className="whitespace-nowrap">{formatDate(last)}</td>
                      <td className="whitespace-nowrap text-[var(--muted-foreground)]">
                        {st === "dalam-jeda"
-                         ? `${formatDate(boleh!.toISOString())} · ${sisa} hr`
+                         ? `${formatDate(statusInfo.bolehKembali ?? null)}${statusInfo.sisa != null ? ` · ${statusInfo.sisa} hr` : ""}`
                          : st === "tersedia"
                          ? "Siap"
                          : "-"}
                      </td>
                     <td>{n.riwayat?.length ?? 0}x</td>
                     <td>
-                      <StatusBadge status={st} sisa={st === "dalam-jeda" ? sisa : undefined} />
+                      <NarasumberStatusBadge narasumber={n} jadwalList={jadwalList} programList={programList} waitingPeriod={waitingPeriod} />
                     </td>
                     <td className="text-right">
                       <div className="flex flex-wrap justify-end gap-1">

@@ -10,11 +10,11 @@ import {
   formatDate,
   getCooldownEnd,
   getLastAppearance,
-  getNarasumberStatus,
   toIsoDate,
   type JadwalSiaran,
   type Narasumber,
 } from "@/types";
+import { getNarasumberStatusInfo } from "@/lib/narasumber-status";
 
 interface Props {
   narasumber: Narasumber;
@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
-  const { jadwalList } = useNarasumber();
+  const { jadwalList, programList, waitingPeriod } = useNarasumber();
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -33,8 +33,8 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  const statusInfo = getNarasumberStatusInfo(narasumber, jadwalList, programList, waitingPeriod);
   const last = getLastAppearance(narasumber, jadwalList);
-  const status = getNarasumberStatus(last);
   // Hanya jadwal milik narasumber ini yang belum tercatat dan tidak dibatalkan.
   const availableSchedules = jadwalList.filter((jadwal) =>
     jadwal.narasumberId === narasumber.id
@@ -63,6 +63,7 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
               tanggal: selectedSchedule.tanggal,
               waktu: selectedSchedule.waktu ?? "",
               program: selectedSchedule.program,
+              programId: selectedSchedule.programId ?? null,
               jenisSiaran: selectedSchedule.jenisSiaran ?? "live",
               topik: selectedSchedule.topik ?? "",
               catatan: selectedSchedule.catatan ?? "",
@@ -88,7 +89,7 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
       const cooldownEnd = getCooldownEnd(selectedSchedule.tanggal);
       showToast(result.alreadyRecorded
         ? "Siaran ini sudah tercatat sebelumnya."
-        : `Siaran ${narasumber.nama} berhasil dicatat. ${cooldownEnd ? `Boleh diundang kembali: ${formatDate(cooldownEnd.toISOString())}.` : ""}`, "success");
+        : `Siaran ${narasumber.nama} berhasil dicatat. ${cooldownEnd ? `Boleh diundang kembali: ${formatDate(toIsoDate(cooldownEnd))}.` : ""}`, "success");
       onClose();
       window.location.reload();
     } catch (error) {
@@ -140,9 +141,9 @@ export function CatatSiaranModal({ narasumber, jadwal, onClose }: Props) {
           Tidak ada jadwal yang belum tercatat untuk narasumber ini.
         </p>}
 
-        {status === "dalam-jeda" && (
+        {statusInfo.status === "dalam-jeda" && (
           <div className="mb-3 border border-[var(--warning)] bg-[#fdf6e3] p-2 text-[12px] text-[var(--warning)]">
-            Narasumber ini sedang dalam masa tunggu. Terakhir tampil: <b>{formatDate(last)}</b>
+            {statusInfo.label ?? `Narasumber ini sedang dalam masa tunggu. Terakhir tampil: ${formatDate(last)}`}
           </div>
         )}
 

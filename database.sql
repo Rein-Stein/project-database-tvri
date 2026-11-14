@@ -9,6 +9,15 @@ CREATE TABLE IF NOT EXISTS narasumber (
   jabatan VARCHAR(180) NULL,
   phone VARCHAR(40) NULL,
   last_appearance DATE NULL,
+  aturan_jeda ENUM('semua_program', 'per_program') NOT NULL DEFAULT 'semua_program',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS program_siaran (
+  id VARCHAR(64) PRIMARY KEY,
+  nama VARCHAR(180) NOT NULL UNIQUE,
+  aktif TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
@@ -19,6 +28,7 @@ CREATE TABLE IF NOT EXISTS riwayat_siaran (
   tanggal DATE NOT NULL,
   waktu VARCHAR(10) NULL,
   program VARCHAR(180) NOT NULL,
+  program_id VARCHAR(64) NULL,
   jenis_siaran ENUM('live', 'rekaman') NOT NULL DEFAULT 'live',
   topik TEXT NULL,
   catatan TEXT NULL,
@@ -35,6 +45,7 @@ CREATE TABLE IF NOT EXISTS jadwal_siaran (
   tanggal DATE NOT NULL,
   waktu VARCHAR(10) NULL,
   program VARCHAR(180) NOT NULL,
+  program_id VARCHAR(64) NULL,
   jenis_siaran ENUM('live', 'rekaman') NOT NULL DEFAULT 'live',
   topik TEXT NULL,
   catatan TEXT NULL,

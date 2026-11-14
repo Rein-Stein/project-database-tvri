@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
 import { Field, inputClass } from "@/components/admin/AdminUI";
-import type { Narasumber } from "@/types";
+import type { AturanJeda, Narasumber } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 
 interface Props {
@@ -23,6 +23,7 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
   const [jabatan, setJabatan] = useState(existing?.jabatan ?? "");
   const [bidang, setBidang] = useState(existing?.bidang ?? "");
   const [phone, setPhone] = useState(existing?.phone ?? "");
+  const [aturanJeda, setAturanJeda] = useState<AturanJeda>(existing?.aturanJeda ?? "semua_program");
   const [dupWarn, setDupWarn] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -79,6 +80,7 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
         jabatan: jabatan.trim(),
         bidang: bidang.trim(),
         phone: phone.trim(),
+        aturanJeda,
       });
       addLog(`Edit narasumber: ${nama.trim()}`);
       showToast(`Data ${nama.trim()} berhasil diperbarui.`, "success");
@@ -89,6 +91,7 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
         jabatan: jabatan.trim(),
         bidang: bidang.trim(),
         phone: phone.trim(),
+        aturanJeda,
       });
       addLog(`Tambah narasumber: ${nama.trim()}`);
       showToast(`Narasumber ${nama.trim()} berhasil ditambahkan.`, "success");
@@ -168,6 +171,20 @@ export function NarasumberFormModal({ existing, existingNames = [], onClose }: P
                 placeholder="0812-xxxx-xxxx"
               />
             </Field>
+            {user?.role === "admin" && (
+              <Field label="Aturan masa jeda">
+                <select
+                  className={inputClass}
+                  value={aturanJeda}
+                  onChange={(event) => setAturanJeda(event.target.value as AturanJeda)}
+                >
+                  <option value="semua_program">Semua program (bawaan)</option>
+                  <option value="per_program">Per program</option>
+                </select>
+                <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">Semua program: masa jeda berlaku setelah penampilan di program apa pun.</p>
+                <p className="text-[11px] text-[var(--muted-foreground)]">Per program: masa jeda dihitung terpisah untuk tiap program.</p>
+              </Field>
+            )}
           </div>
         </div>
 

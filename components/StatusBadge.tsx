@@ -9,7 +9,7 @@ const statusBadge: Record<NarasumberStatus, string> = {
   "belum-tampil": "bg-[var(--muted)] text-[var(--muted-foreground)] border-transparent",
 };
 
-export function StatusBadge({ status, sisa }: { status: NarasumberStatus; sisa?: number }) {
+export function StatusBadge({ status, sisa, label }: { status: NarasumberStatus; sisa?: number; label?: string }) {
   return (
     <span
       className={cn(
@@ -17,9 +17,9 @@ export function StatusBadge({ status, sisa }: { status: NarasumberStatus; sisa?:
         statusBadge[status]
       )}
     >
-      {status === "dalam-jeda" && sisa != null
+      {label ?? (status === "dalam-jeda" && sisa != null
         ? `${STATUS_LABEL[status]} · ${sisa} hr`
-        : STATUS_LABEL[status]}
+        : STATUS_LABEL[status])}
     </span>
   );
 }

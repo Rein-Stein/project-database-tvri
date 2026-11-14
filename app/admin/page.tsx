@@ -9,15 +9,13 @@ import {
   formatDate,
   formatDateTime,
   formatWaitingPeriod,
-  getCooldownEnd,
   getLastAppearance,
-  getNarasumberStatus,
-  getRemainingDays,
   toIsoDate,
 } from "@/types";
 import { AdminSubNav, StatCard, JadwalBadge } from "@/components/admin/AdminUI";
-import { StatusBadge } from "@/components/StatusBadge";
+import { NarasumberStatusBadge } from "@/components/NarasumberStatusBadge";
 import { AdminGuard } from "@/components/admin/AdminGuard";
+import { getNarasumberStatusInfo } from "@/lib/narasumber-status";
 
 export default function AdminDashboardPage() {
   return (
@@ -28,7 +26,7 @@ export default function AdminDashboardPage() {
 }
 
 function DashboardContent() {
-  const { narasumberList, jadwalList, logList, resetToSampleData, waitingPeriod } = useNarasumber();
+  const { narasumberList, jadwalList, programList, logList, resetToSampleData, waitingPeriod } = useNarasumber();
   const { showToast } = useToast();
 
   const deleteActivityLog = async (id?: string) => {
@@ -50,15 +48,14 @@ function DashboardContent() {
   const stats = useMemo(() => {
     let tersedia = 0, dalamJeda = 0, belumTampil = 0, totalSiaran = 0;
     for (const n of narasumberList) {
-      const last = getLastAppearance(n, jadwalList);
-      const st = getNarasumberStatus(last, waitingPeriod);
+      const st = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod).status;
       if (st === "tersedia") tersedia++;
       else if (st === "dalam-jeda") dalamJeda++;
       else belumTampil++;
       totalSiaran += n.riwayat?.length ?? 0;
     }
     return { tersedia, dalamJeda, belumTampil, totalSiaran, total: narasumberList.length };
-  }, [narasumberList, jadwalList, waitingPeriod]);
+  }, [narasumberList, jadwalList, programList, waitingPeriod]);
 
   const { jadwalHariIni, jadwalMingguIni } = useMemo(() => {
     const today = new Date();
@@ -92,26 +89,23 @@ function DashboardContent() {
 
     return narasumberList
       .filter((n) => {
-        const last = getLastAppearance(n, jadwalList);
-        const st = getNarasumberStatus(last, waitingPeriod);
+        const status = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod);
+        const st = status.status;
         if (st !== "dalam-jeda") return false;
-        const end = getCooldownEnd(last, waitingPeriod);
-        return end && end <= in30;
+        return status.bolehKembali !== undefined && status.bolehKembali <= toIsoDate(in30);
       })
       .map((n) => {
-        const last = getLastAppearance(n, jadwalList);
-        const end = getCooldownEnd(last, waitingPeriod)!;
-        const sisa = getRemainingDays(last, waitingPeriod);
-        return { ...n, sisa, boleh: end.toISOString() };
+        const status = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod);
+        return { ...n, sisa: status.sisa ?? 0, boleh: status.bolehKembali ?? "" };
       })
       .sort((a, b) => a.sisa - b.sisa)
       .slice(0, 5);
-  }, [narasumberList, jadwalList, waitingPeriod]);
+  }, [narasumberList, jadwalList, programList, waitingPeriod]);
 
   const rekomendasi = useMemo(() => {
     return narasumberList
       .filter((n) => {
-        const st = getNarasumberStatus(getLastAppearance(n, jadwalList), waitingPeriod);
+        const st = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod).status;
         return st === "tersedia" || st === "belum-tampil";
       })
       .sort((a, b) => {
@@ -120,7 +114,7 @@ function DashboardContent() {
         return la.localeCompare(lb);
       })
       .slice(0, 6);
-  }, [narasumberList, jadwalList, waitingPeriod]);
+  }, [narasumberList, jadwalList, programList, waitingPeriod]);
 
   const getNama = (id: string) => narasumberList.find((n) => n.id === id)?.nama ?? id;
 
@@ -159,7 +153,7 @@ function DashboardContent() {
           <p className="text-[12px] font-medium text-[var(--muted-foreground)]">Masa Tunggu Narasumber</p>
           <p className="mt-1 text-[20px] font-semibold">
             {formatWaitingPeriod(waitingPeriod)}
-            <span className="ml-2 text-[12px] font-normal text-[var(--muted-foreground)]">(dari database — berlaku untuk semua perhitungan rotasi)</span>
+            <span className="ml-2 text-[12px] font-normal text-[var(--muted-foreground)]">(dari database — durasi untuk semua aturan jeda)</span>
           </p>
         </div>
         <Link href="/admin/settings" className="btn btn-outline">
@@ -355,7 +349,6 @@ function DashboardContent() {
                 <tbody>
                   {rekomendasi.map((n) => {
                     const last = getLastAppearance(n, jadwalList);
-                    const st = getNarasumberStatus(last);
                     return (
                       <tr key={n.id}>
                         <td>
@@ -369,7 +362,7 @@ function DashboardContent() {
                         <td className="text-[var(--muted-foreground)]">{n.instansi}</td>
                         <td className="whitespace-nowrap">{formatDate(last)}</td>
                         <td>
-                          <StatusBadge status={st} />
+                          <NarasumberStatusBadge narasumber={n} jadwalList={jadwalList} programList={programList} waitingPeriod={waitingPeriod} />
                         </td>
                       </tr>
                     );

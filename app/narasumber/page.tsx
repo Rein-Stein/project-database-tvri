@@ -6,14 +6,12 @@ import { Search } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import {
   formatDate,
-  getCooldownEnd,
   getLastAppearance,
-  getNarasumberStatus,
-  getRemainingDays,
   type NarasumberStatus,
 } from "@/types";
 import { cn } from "@/lib/utils";
-import { StatusBadge } from "@/components/StatusBadge";
+import { NarasumberStatusBadge } from "@/components/NarasumberStatusBadge";
+import { getNarasumberStatusInfo, statusFilterMatches } from "@/lib/narasumber-status";
 import { DatabaseStatus } from "@/components/DatabaseStatus";
 
 type Filter = "semua" | NarasumberStatus;
@@ -21,7 +19,7 @@ type SortKey = "nama" | "terakhir" | "paling-lama" | "paling-baru";
 
 export default function NarasumberListPage() {
   const router = useRouter();
-  const { narasumberList, jadwalList, waitingPeriod } = useNarasumber();
+  const { narasumberList, jadwalList, programList, waitingPeriod } = useNarasumber();
   const [filter, setFilter] = useState<Filter>("semua");
   const [instansiFilter, setInstansiFilter] = useState("semua");
   const [bidangFilter, setBidangFilter] = useState("semua");
@@ -48,8 +46,7 @@ export default function NarasumberListPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const result = narasumberList.filter((n) => {
-      const last = getLastAppearance(n, jadwalList);
-      const status = getNarasumberStatus(last, waitingPeriod);
+      const status = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod).status;
       if (filter !== "semua" && status !== filter) return false;
       if (instansiFilter !== "semua" && n.instansi !== instansiFilter) return false;
       if (bidangFilter !== "semua" && n.bidang !== bidangFilter) return false;
@@ -71,12 +68,12 @@ export default function NarasumberListPage() {
       case "paling-lama":
         return [...result].sort((a, b) => (lastOf(a) ?? "0").localeCompare(lastOf(b) ?? "0"));
     }
-  }, [narasumberList, jadwalList, waitingPeriod, filter, instansiFilter, bidangFilter, sort, query]);
+  }, [narasumberList, jadwalList, programList, waitingPeriod, filter, instansiFilter, bidangFilter, sort, query]);
 
   const countBy = (f: Filter) =>
     f === "semua"
       ? narasumberList.length
-      : narasumberList.filter((n) => getNarasumberStatus(getLastAppearance(n, jadwalList), waitingPeriod) === f).length;
+      : narasumberList.filter((n) => statusFilterMatches(n, jadwalList, programList, waitingPeriod, f)).length;
 
   const filters: { key: Filter; label: string }[] = [
     { key: "semua", label: "Semua" },
@@ -183,9 +180,8 @@ export default function NarasumberListPage() {
             <tbody>
               {filtered.map((n) => {
                 const last = getLastAppearance(n, jadwalList);
-                const status = getNarasumberStatus(last);
-                const sisa = getRemainingDays(last);
-                const boleh = getCooldownEnd(last);
+                const statusInfo = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod);
+                const status = statusInfo.status;
                 return (
                   <tr
                     key={n.id}
@@ -215,13 +211,13 @@ export default function NarasumberListPage() {
                     <td className="whitespace-nowrap">{formatDate(last)}</td>
                      <td className="whitespace-nowrap text-[var(--muted-foreground)]">
                        {status === "dalam-jeda"
-                         ? `${formatDate(boleh!.toISOString())} · ${sisa} hr`
+                         ? `${formatDate(statusInfo.bolehKembali ?? null)}${statusInfo.sisa != null ? ` · ${statusInfo.sisa} hr` : ""}`
                          : status === "tersedia"
                          ? "Siap"
                          : "-"}
                      </td>
                     <td>
-                      <StatusBadge status={status} sisa={status === "dalam-jeda" ? sisa : undefined} />
+                      <NarasumberStatusBadge narasumber={n} jadwalList={jadwalList} programList={programList} waitingPeriod={waitingPeriod} />
                     </td>
                   </tr>
                 );

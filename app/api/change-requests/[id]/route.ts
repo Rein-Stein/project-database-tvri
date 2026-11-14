@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import pool from "@/lib/mysql";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import type { ChangeRequestData, JadwalChangeData, NarasumberChangeData } from "@/types";
@@ -18,6 +18,12 @@ interface ChangeRow extends RowDataPacket {
   data_lama: ChangeRequestData;
   data_baru: ChangeRequestData;
   status: "pending" | "approved" | "rejected";
+}
+
+interface ProgramRow extends RowDataPacket {
+  id: string;
+  nama: string;
+  aktif: number | boolean;
 }
 
 function session() {
@@ -49,6 +55,7 @@ function narasumberData(value: ChangeRequestData): NarasumberChangeData | null {
 
 function jadwalData(value: ChangeRequestData): JadwalChangeData | null {
   if (typeof value.narasumberId !== "string" || typeof value.tanggal !== "string" || typeof value.program !== "string") return null;
+  if (value.programId !== undefined && value.programId !== null && typeof value.programId !== "string") return null;
   if (typeof value.status !== "string" || typeof value.jenisSiaran !== "string" || !isValidDate(value.tanggal)) return null;
   if (value.tanggalBaru && !isValidDate(value.tanggalBaru)) return null;
   return {
@@ -56,12 +63,24 @@ function jadwalData(value: ChangeRequestData): JadwalChangeData | null {
     tanggal: value.tanggal,
     waktu: value.waktu ?? "",
     program: value.program,
+    programId: typeof value.programId === "string" ? value.programId : null,
     jenisSiaran: value.jenisSiaran as JadwalChangeData["jenisSiaran"],
     topik: value.topik ?? "",
     catatan: value.catatan ?? "",
     status: value.status as JadwalChangeData["status"],
     tanggalBaru: value.tanggalBaru ?? "",
   };
+}
+
+async function findActiveProgram(connection: PoolConnection, programId: string | null): Promise<Pick<ProgramRow, "id" | "nama"> | null> {
+  if (!programId) return null;
+  const [rows] = await connection.query<ProgramRow[]>(
+    "SELECT id, nama, aktif FROM program_siaran WHERE id = ? FOR UPDATE",
+    [programId]
+  );
+  const program = rows[0];
+  if (!program || Number(program.aktif) !== 1) return null;
+  return { id: program.id, nama: program.nama };
 }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
@@ -111,8 +130,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           return NextResponse.json({ ok: false, message: "ID narasumber sudah digunakan. Pengajuan tidak dapat diterapkan." }, { status: 409 });
         }
         await connection.query(
-          "INSERT INTO narasumber (id, nama, bidang, instansi, jabatan, phone, last_appearance) VALUES (?, ?, ?, ?, ?, ?, NULL)",
-          [change.entity_id, data.nama, data.bidang, data.instansi, data.jabatan, data.phone]
+          "INSERT INTO narasumber (id, nama, bidang, instansi, jabatan, phone, last_appearance, aturan_jeda) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+          [change.entity_id, data.nama, data.bidang, data.instansi, data.jabatan, data.phone, "semua_program"]
         );
       } else if (change.entity_type === "narasumber" || change.entity_type === "narasumber_update") {
         const data = narasumberData(change.data_baru);
@@ -140,6 +159,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "ID jadwal sudah digunakan. Pengajuan tidak dapat diterapkan." }, { status: 409 });
         }
+        const program = await findActiveProgram(connection, data.programId);
+        if (!program) {
+          await connection.rollback();
+          return NextResponse.json({ ok: false, message: "Program tidak ditemukan atau sudah nonaktif." }, { status: 400 });
+        }
+        data.programId = program.id;
+        data.program = program.nama;
         if (data.status === "dijadwalkan") {
           const [people] = await connection.query<RowDataPacket[]>(
             "SELECT id, DATE_FORMAT(last_appearance, '%Y-%m-%d') AS last_appearance FROM narasumber WHERE id = ? FOR UPDATE",
@@ -153,7 +179,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
             connection,
             data.narasumberId,
             typeof people[0].last_appearance === "string" ? people[0].last_appearance : null,
-            data.tanggal
+            data.tanggal,
+            undefined,
+            data.programId,
+            data.program
           );
           if (conflictMessage) {
             await connection.rollback();
@@ -161,8 +190,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           }
         }
         await connection.query(
-          "INSERT INTO jadwal_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan, status, tanggal_baru) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [change.entity_id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null]
+          "INSERT INTO jadwal_siaran (id, narasumber_id, tanggal, waktu, program, program_id, jenis_siaran, topik, catatan, status, tanggal_baru) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [change.entity_id, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.programId, data.jenisSiaran, data.topik || null, data.catatan || null, data.status, data.tanggalBaru || null]
         );
       } else if (change.entity_type === "jadwal_siaran_update") {
         const data = jadwalData(change.data_baru);
@@ -181,6 +210,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           tanggal: current.tanggal_iso ?? dateString(current.tanggal),
           waktu: current.waktu ?? "",
           program: current.program,
+          programId: current.program_id ?? null,
           jenisSiaran: current.jenis_siaran ?? "live",
           topik: current.topik ?? "",
           catatan: current.catatan ?? "",
@@ -191,6 +221,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           await connection.rollback();
           return NextResponse.json({ ok: false, message: "Data jadwal sudah berubah. Pengajuan perlu ditinjau ulang." }, { status: 409 });
         }
+        const program = await findActiveProgram(connection, data.programId);
+        if (!program) {
+          await connection.rollback();
+          return NextResponse.json({ ok: false, message: "Program tidak ditemukan atau sudah nonaktif." }, { status: 400 });
+        }
+        data.programId = program.id;
+        data.program = program.nama;
         if (data.status === "dijadwalkan") {
           const [people] = await connection.query<RowDataPacket[]>(
             "SELECT id, DATE_FORMAT(last_appearance, '%Y-%m-%d') AS last_appearance FROM narasumber WHERE id = ? FOR UPDATE",
@@ -205,7 +242,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
             data.narasumberId,
             typeof people[0].last_appearance === "string" ? people[0].last_appearance : null,
             data.tanggal,
-            change.entity_id
+            change.entity_id,
+            data.programId,
+            data.program
           );
           if (conflictMessage) {
             await connection.rollback();
@@ -215,16 +254,16 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         const appliedStatus =
           data.status === "sudah-tampil" && !isJadwalSelesai(data) ? "dijadwalkan" : data.status;
         await connection.query(
-          "UPDATE jadwal_siaran SET narasumber_id = ?, tanggal = ?, waktu = ?, program = ?, jenis_siaran = ?, topik = ?, catatan = ?, status = ?, tanggal_baru = ? WHERE id = ?",
-          [data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null, appliedStatus, data.tanggalBaru || null, change.entity_id]
+          "UPDATE jadwal_siaran SET narasumber_id = ?, tanggal = ?, waktu = ?, program = ?, program_id = ?, jenis_siaran = ?, topik = ?, catatan = ?, status = ?, tanggal_baru = ? WHERE id = ?",
+          [data.narasumberId, data.tanggal, data.waktu || null, data.program, data.programId, data.jenisSiaran, data.topik || null, data.catatan || null, appliedStatus, data.tanggalBaru || null, change.entity_id]
         );
         if (old.status !== "sudah-tampil" && data.status === "sudah-tampil") {
           const historyId = `jadwal-${change.entity_id}`;
           const [history] = await connection.query<RowDataPacket[]>("SELECT id FROM riwayat_siaran WHERE id = ? FOR UPDATE", [historyId]);
           if (!history.length) {
             await connection.query(
-              "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              [historyId, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.jenisSiaran, data.topik || null, data.catatan || null]
+              "INSERT INTO riwayat_siaran (id, narasumber_id, tanggal, waktu, program, program_id, jenis_siaran, topik, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [historyId, data.narasumberId, data.tanggal, data.waktu || null, data.program, data.programId, data.jenisSiaran, data.topik || null, data.catatan || null]
             );
           }
           await connection.query(

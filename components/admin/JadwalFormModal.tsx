@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { useToast } from "@/context/ToastContext";
@@ -14,6 +15,7 @@ import {
   toIsoDate,
   formatDate,
   isJadwalSelesai,
+  normalizeProgramName,
   type JenisSiaran,
   type JadwalSiaran,
 } from "@/types";
@@ -24,7 +26,7 @@ interface Props {
 }
 
 export function JadwalFormModal({ existing, onClose }: Props) {
-  const { narasumberList, jadwalList, addJadwal, updateJadwal, addLog } = useNarasumber();
+  const { narasumberList, jadwalList, programList, addJadwal, updateJadwal, addLog } = useNarasumber();
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -32,7 +34,7 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   const [narasumberId, setNarasumberId] = useState(existing?.narasumberId ?? "");
   const [tanggal, setTanggal] = useState(existing?.tanggal ?? today);
   const [waktu, setWaktu] = useState(existing?.waktu ?? "");
-  const [program, setProgram] = useState(existing?.program ?? "");
+  const [programId, setProgramId] = useState(existing?.programId ?? "");
   const [jenisSiaran, setJenisSiaran] = useState<JenisSiaran>(existing?.jenisSiaran ?? "live");
   const [topik, setTopik] = useState(existing?.topik ?? "");
   const [catatan, setCatatan] = useState(existing?.catatan ?? "");
@@ -44,21 +46,37 @@ export function JadwalFormModal({ existing, onClose }: Props) {
   useEffect(() => setMounted(true), []);
 
   const selectedNarasumber = narasumberList.find((n) => n.id === narasumberId);
+  const selectedProgram = programList.find((item) => item.id === programId);
+  const activePrograms = programList.filter((item) => item.aktif);
   const isOperator = user?.role === "operator";
   const checksWaitingPeriod = !existing || statusJadwal === "dijadwalkan";
+
+  useEffect(() => {
+    if (!existing || existing.programId || programId || programList.length === 0) return;
+    const matched = programList.find((item) => normalizeProgramName(item.nama) === normalizeProgramName(existing.program));
+    if (matched) setProgramId(matched.id);
+  }, [existing, programId, programList]);
+
   const rotationConflict =
-    checksWaitingPeriod && selectedNarasumber && tanggal
+    checksWaitingPeriod && selectedNarasumber && tanggal && selectedProgram
       ? findRotationConflict(
           tanggal,
           collectPenampilan(selectedNarasumber, jadwalList),
           undefined,
-          existing ? [`jadwal-${existing.id}`] : []
+          existing ? [`jadwal-${existing.id}`] : [],
+          {
+            aturanJeda: selectedNarasumber.aturanJeda,
+            programId: selectedProgram.id,
+            programNama: selectedProgram.nama,
+          }
         )
       : null;
-  const rotationMessage = rotationConflict ? describeRotationConflict(rotationConflict) : "";
+  const rotationMessage = rotationConflict
+    ? describeRotationConflict(rotationConflict, undefined, selectedNarasumber?.nama)
+    : "";
 
   const doSave = async (withOverride = false) => {
-    if (!narasumberId || !tanggal || !program.trim()) {
+    if (!narasumberId || !tanggal || !selectedProgram) {
       showToast("Narasumber, Tanggal, dan Program wajib diisi.", "error");
       return;
     }
@@ -84,7 +102,8 @@ export function JadwalFormModal({ existing, onClose }: Props) {
               narasumberId,
               tanggal,
               waktu,
-              program: program.trim(),
+              program: selectedProgram.nama,
+              programId: selectedProgram.id,
               jenisSiaran,
               topik: topik.trim(),
               catatan: catatan.trim(),
@@ -113,27 +132,29 @@ export function JadwalFormModal({ existing, onClose }: Props) {
         narasumberId,
         tanggal,
         waktu: waktu || undefined,
-        program: program.trim(),
+        program: selectedProgram.nama,
+        programId: selectedProgram.id,
         jenisSiaran,
         topik: topik.trim() || undefined,
         catatan: catatan.trim() || undefined,
         status: statusJadwal,
       });
       const overrideNote = withOverride ? ` [OVERRIDE: ${overrideAlasan.trim()}]` : "";
-      addLog(`Edit jadwal: ${nama}${overrideNote}`, `Tanggal: ${formatDate(tanggal)}, Program: ${program.trim()}, Status: ${statusJadwal}`);
+      addLog(`Edit jadwal: ${nama}${overrideNote}`, `Tanggal: ${formatDate(tanggal)}, Program: ${selectedProgram.nama}, Status: ${statusJadwal}`);
       showToast(`Jadwal ${nama} berhasil diperbarui.`, "success");
     } else {
       addJadwal({
         narasumberId,
         tanggal,
         waktu: waktu || undefined,
-        program: program.trim(),
+        program: selectedProgram.nama,
+        programId: selectedProgram.id,
         jenisSiaran,
         topik: topik.trim() || undefined,
         catatan: catatan.trim() || undefined,
       });
       const overrideNote = withOverride ? ` [OVERRIDE: ${overrideAlasan.trim()}]` : "";
-      addLog(`Buat jadwal: ${nama}${overrideNote}`, `Tanggal: ${formatDate(tanggal)}, Program: ${program.trim()}`);
+      addLog(`Buat jadwal: ${nama}${overrideNote}`, `Tanggal: ${formatDate(tanggal)}, Program: ${selectedProgram.nama}`);
       showToast(`Jadwal ${nama} berhasil dibuat.`, "success");
     }
     setSaving(false);
@@ -231,14 +252,22 @@ export function JadwalFormModal({ existing, onClose }: Props) {
                   <input type="time" className={inputClass} value={waktu} onChange={(e) => setWaktu(e.target.value)} />
                 </Field>
               </div>
-              <Field label="Nama Program / Acara" required>
-                <input
-                  className={inputClass}
-                  value={program}
-                  onChange={(e) => setProgram(e.target.value)}
-                  placeholder="Dialog Pagi, Siaran Berita, dll."
-                />
+              <Field label="Program" required>
+                <select className={inputClass} value={programId} onChange={(event) => setProgramId(event.target.value)}>
+                  <option value="">— Pilih program —</option>
+                  {programList.filter((item) => item.aktif || item.id === programId).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nama}{item.aktif ? "" : " (nonaktif)"}
+                    </option>
+                  ))}
+                </select>
               </Field>
+              {activePrograms.length === 0 && (
+                <p className="text-[12px] text-[var(--muted-foreground)]">
+                  Belum ada program aktif.
+                  {user?.role === "admin" && <> <Link href="/admin/program" className="font-semibold text-[var(--accent)] hover:underline">Kelola Program</Link></>}
+                </p>
+              )}
               <Field label="Jenis Siaran" required>
                 <select className={inputClass} value={jenisSiaran} onChange={(e) => setJenisSiaran(e.target.value as JenisSiaran)}>
                   <option value="live">Live</option>

@@ -75,12 +75,14 @@ describe("POST /api/change-requests", () => {
     const body = {
       entityType: "jadwal_siaran_create",
       dataBaru: {
-        narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
+        narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim", programId: "prog-1",
         jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "",
       },
     };
     mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Berita Kaltim", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1" }]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
@@ -100,23 +102,27 @@ describe("POST /api/change-requests", () => {
     mocks.release.mockReturnValue(undefined);
     mocks.verifySessionToken.mockReturnValue({ userId: "operator-1", role: "operator", name: "Operator" });
     mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Berita Kaltim", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1" }]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[{ id: "existing" }]]);
     const retry = await POST(request(body));
 
     expect(retry.status).toBe(409);
-    expect(mocks.connectionQuery.mock.calls[3][1]).toContain(firstEntityId);
+    expect(mocks.connectionQuery.mock.calls.find(([sql]) => String(sql).includes("SELECT id FROM change_requests"))?.[1]).toContain(firstEntityId);
     expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO change_requests"))).toBe(false);
   });
 
   it("rejects an operator schedule that conflicts with another scheduled appearance", async () => {
     mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Dialog Siang", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
       .mockResolvedValueOnce([[{
-        sumber: "jadwal", id: "j-existing", tanggal: "2026-11-17", program: "Dialog Pagi",
+        sumber: "jadwal", id: "j-existing", tanggal: "2026-11-17", program: "Dialog Pagi", program_id: "prog-2",
       }]])
+      .mockResolvedValueOnce([[{ aturan_jeda: "semua_program" }]])
       .mockResolvedValueOnce([[
         { key: "waiting_period_value", value: "5" },
         { key: "waiting_period_unit", value: "day" },
@@ -125,7 +131,7 @@ describe("POST /api/change-requests", () => {
     const response = await POST(request({
       entityType: "jadwal_siaran_create",
       dataBaru: {
-        narasumberId: "n-1", tanggal: "2026-11-14", waktu: "10:00", program: "Dialog Siang",
+        narasumberId: "n-1", tanggal: "2026-11-14", waktu: "10:00", program: "Dialog Siang", programId: "prog-1",
         jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
       },
     }));
@@ -134,8 +140,70 @@ describe("POST /api/change-requests", () => {
     expect(response.status).toBe(409);
     expect(body.message).toContain("17 November 2026");
     expect(body.message).toContain("22 November 2026");
-    expect(String(mocks.connectionQuery.mock.calls[1][0])).toContain("DATE_FORMAT(tanggal, '%Y-%m-%d')");
+    expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("DATE_FORMAT(tanggal, '%Y-%m-%d')"))).toBe(true);
     expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO change_requests"))).toBe(false);
+    expect(mocks.rollback).toHaveBeenCalledOnce();
+  });
+
+  it("allows a different program for a per_program narasumber", async () => {
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "prog-b", nama: "Program B", aktif: 1 }]])
+      .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
+      .mockResolvedValueOnce([[{
+        sumber: "riwayat", id: "r-a", tanggal: "2026-11-10", program: "Program A", program_id: "prog-a",
+      }]])
+      .mockResolvedValueOnce([[{ aturan_jeda: "per_program" }]])
+      .mockResolvedValueOnce([[{ key: "waiting_period_value", value: "5" }, { key: "waiting_period_unit", value: "day" }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    const response = await POST(request({
+      entityType: "jadwal_siaran_create",
+      dataBaru: {
+        narasumberId: "n-1", tanggal: "2026-11-12", waktu: "10:00", program: "Program B", programId: "prog-b",
+        jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+      },
+    }));
+
+    expect(response.status).toBe(201);
+  });
+
+  it("rejects a matching program for a per_program narasumber", async () => {
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{ id: "prog-a", nama: "Program A", aktif: 1 }]])
+      .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
+      .mockResolvedValueOnce([[{
+        sumber: "riwayat", id: "r-a", tanggal: "2026-11-10", program: "Program A", program_id: "prog-a",
+      }]])
+      .mockResolvedValueOnce([[{ aturan_jeda: "per_program" }]])
+      .mockResolvedValueOnce([[{ key: "waiting_period_value", value: "5" }, { key: "waiting_period_unit", value: "day" }]]);
+
+    const response = await POST(request({
+      entityType: "jadwal_siaran_create",
+      dataBaru: {
+        narasumberId: "n-1", tanggal: "2026-11-12", waktu: "10:00", program: "Program A", programId: "prog-a",
+        jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+      },
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.message).toContain("program Program A");
+    expect(body.message).toContain("15 November 2026");
+    expect(mocks.rollback).toHaveBeenCalledOnce();
+  });
+
+  it("rejects inactive programs before storing an operator request", async () => {
+    mocks.connectionQuery.mockResolvedValueOnce([[{ id: "prog-1", nama: "Program", aktif: 0 }]]);
+    const response = await POST(request({
+      entityType: "jadwal_siaran_create",
+      dataBaru: {
+        narasumberId: "n-1", tanggal: "2026-11-12", waktu: "10:00", program: "Program", programId: "prog-1",
+        jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+      },
+    }));
+    expect(response.status).toBe(400);
+    expect(mocks.connectionQuery).toHaveBeenCalledOnce();
     expect(mocks.rollback).toHaveBeenCalledOnce();
   });
 });

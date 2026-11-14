@@ -6,17 +6,15 @@ import { ArrowLeft, MessageCircle, User } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import {
   formatDate,
-  getCooldownEnd,
   getLastAppearance,
-  getNarasumberStatus,
-  getRemainingDays,
 } from "@/types";
-import { StatusBadge } from "@/components/StatusBadge";
+import { NarasumberStatusBadge } from "@/components/NarasumberStatusBadge";
+import { getNarasumberStatusInfo } from "@/lib/narasumber-status";
 import { EmptyState } from "@/components/EmptyState";
 
 export default function DetailNarasumberPage({ params }: { params: { id: string } }) {
   const { id } = params;
-  const { narasumberList, jadwalList } = useNarasumber();
+  const { narasumberList, jadwalList, programList, waitingPeriod } = useNarasumber();
   const n = narasumberList.find((x) => x.id === id);
 
   const last = useMemo(() => (n ? getLastAppearance(n, jadwalList) : null), [n, jadwalList]);
@@ -39,9 +37,10 @@ export default function DetailNarasumberPage({ params }: { params: { id: string 
     );
   }
 
-  const status = getNarasumberStatus(last);
-  const sisa = getRemainingDays(last);
-  const boleh = getCooldownEnd(last);
+  const statusInfo = getNarasumberStatusInfo(n, jadwalList, programList, waitingPeriod);
+  const status = statusInfo.status;
+  const sisa = statusInfo.sisa;
+  const boleh = statusInfo.bolehKembali;
   const whatsappNumber = n.phone?.replace(/\D/g, "").replace(/^0/, "62");
   const whatsappHref = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Halo ${n.nama}, kami dari TVRI Kaltim.`)}`
@@ -61,7 +60,7 @@ export default function DetailNarasumberPage({ params }: { params: { id: string 
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h1 className="text-[22px] font-semibold">{n.nama}</h1>
-            <StatusBadge status={status} sisa={status === "dalam-jeda" ? sisa : undefined} />
+            <NarasumberStatusBadge narasumber={n} jadwalList={jadwalList} programList={programList} waitingPeriod={waitingPeriod} />
           </div>
           {whatsappHref && (
             <a
@@ -130,13 +129,17 @@ export default function DetailNarasumberPage({ params }: { params: { id: string 
             </div>
             <div className="info-row">
               <dt>Boleh Diundang Kembali</dt>
-              <dd>{boleh ? formatDate(boleh.toISOString()) : <span className="text-[var(--muted-foreground)]">Belum pernah tampil</span>}</dd>
+              <dd>{boleh
+                ? formatDate(boleh)
+                : n.aturanJeda === "per_program"
+                  ? "Tersedia"
+                  : <span className="text-[var(--muted-foreground)]">Belum pernah tampil</span>}</dd>
             </div>
             <div className="info-row">
               <dt>Sisa Masa Tunggu</dt>
               <dd>
                  {status === "dalam-jeda"
-                   ? `${sisa} hari`
+                   ? n.aturanJeda === "per_program" ? statusInfo.label : `${sisa} hari`
                    : status === "tersedia"
                    ? "Selesai — siap diundang"
                    : <span className="text-[var(--muted-foreground)]">Belum pernah tampil</span>}
@@ -145,7 +148,7 @@ export default function DetailNarasumberPage({ params }: { params: { id: string 
             <div className="info-row">
               <dt>Status Saat Ini</dt>
               <dd>
-                <StatusBadge status={status} sisa={status === "dalam-jeda" ? sisa : undefined} />
+                <NarasumberStatusBadge narasumber={n} jadwalList={jadwalList} programList={programList} waitingPeriod={waitingPeriod} />
               </dd>
             </div>
           </dl>

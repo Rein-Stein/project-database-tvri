@@ -92,7 +92,7 @@ describe("PATCH /api/change-requests/[id]", () => {
 
   it("applies an approved jadwal_siaran_update to the primary schedule row", async () => {
     const oldData = {
-      narasumberId: "n-1", tanggal: "2026-10-05", waktu: "09:00", program: "Dialog Pagi",
+      narasumberId: "n-1", tanggal: "2026-10-05", waktu: "09:00", program: "Dialog Pagi", programId: "prog-1",
       jenisSiaran: "live", topik: "Topik lama", catatan: "", status: "dijadwalkan", tanggalBaru: "",
     };
     mocks.connectionQuery
@@ -107,9 +107,11 @@ describe("PATCH /api/change-requests/[id]", () => {
       }]])
       .mockResolvedValueOnce([[{
         narasumber_id: "n-1", tanggal: "2026-10-05", waktu: "09:00", program: "Dialog Pagi",
-        jenis_siaran: "live", topik: "Topik lama", catatan: null, status: "dijadwalkan", tanggal_baru: null,
+        program_id: "prog-1", jenis_siaran: "live", topik: "Topik lama", catatan: null, status: "dijadwalkan", tanggal_baru: null,
       }]])
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Dialog Pagi", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([{ affectedRows: 1 }])
@@ -120,14 +122,14 @@ describe("PATCH /api/change-requests/[id]", () => {
 
     expect(response.status).toBe(200);
     expect(String(mocks.connectionQuery.mock.calls[1][0])).toContain("DATE_FORMAT(tanggal, '%Y-%m-%d')");
-    expect(String(mocks.connectionQuery.mock.calls[5][0])).toContain("UPDATE jadwal_siaran");
-    expect(mocks.connectionQuery.mock.calls[5][1]).toContain("Topik baru");
+    expect(String(mocks.connectionQuery.mock.calls[7][0])).toContain("UPDATE jadwal_siaran");
+    expect(mocks.connectionQuery.mock.calls[7][1]).toContain("Topik baru");
     expect(mocks.commit).toHaveBeenCalledOnce();
   });
 
   it("approves a schedule without the recording flag without creating history", async () => {
     const data = {
-      narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim",
+      narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim", programId: "prog-1",
       jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "",
     };
     mocks.connectionQuery
@@ -136,7 +138,9 @@ describe("PATCH /api/change-requests/[id]", () => {
         operator_id: "operator-1", data_lama: {}, data_baru: data, status: "pending",
       }]])
       .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Berita Kaltim", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([{ affectedRows: 1 }])
@@ -146,14 +150,37 @@ describe("PATCH /api/change-requests/[id]", () => {
     const response = await PATCH(patchRequest({ action: "approve" }), { params: { id: "cr-jadwal-no-history" } });
 
     expect(response.status).toBe(200);
-    expect(String(mocks.connectionQuery.mock.calls[5][0])).toContain("INSERT INTO jadwal_siaran");
+    expect(String(mocks.connectionQuery.mock.calls[7][0])).toContain("INSERT INTO jadwal_siaran");
+    expect(mocks.connectionQuery.mock.calls[7][1]).toContain("prog-1");
+    expect(mocks.connectionQuery.mock.calls[7][1]).toContain("Berita Kaltim");
     expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO riwayat_siaran"))).toBe(false);
     expect(mocks.commit).toHaveBeenCalledOnce();
   });
 
+  it("rejects approval when the selected program is no longer active", async () => {
+    const data = {
+      narasumberId: "n-1", tanggal: "2026-09-25", waktu: "10:00", program: "Berita Kaltim", programId: "prog-1",
+      jenisSiaran: "live", topik: "Pendidikan", catatan: "", status: "dijadwalkan", tanggalBaru: "",
+    };
+    mocks.connectionQuery
+      .mockResolvedValueOnce([[{
+        id: "cr-inactive", entity_type: "jadwal_siaran_create", entity_id: "j-new",
+        operator_id: "operator-1", data_lama: {}, data_baru: data, status: "pending",
+      }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Berita Kaltim", aktif: 0 }]]);
+
+    const response = await PATCH(patchRequest({ action: "approve" }), { params: { id: "cr-inactive" } });
+
+    expect(response.status).toBe(400);
+    expect(String(mocks.connectionQuery.mock.calls[2][0])).toContain("program_siaran");
+    expect(mocks.rollback).toHaveBeenCalledOnce();
+    expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO jadwal_siaran"))).toBe(false);
+  });
+
   it("rejects approval of a new schedule that conflicts with an existing appearance", async () => {
     const data = {
-      narasumberId: "n-1", tanggal: "2026-11-14", waktu: "10:00", program: "Dialog Siang",
+      narasumberId: "n-1", tanggal: "2026-11-14", waktu: "10:00", program: "Dialog Siang", programId: "prog-1",
       jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
     };
     mocks.connectionQuery
@@ -162,10 +189,12 @@ describe("PATCH /api/change-requests/[id]", () => {
         operator_id: "operator-1", data_lama: {}, data_baru: data, status: "pending",
       }]])
       .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Dialog Siang", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
       .mockResolvedValueOnce([[{
-        sumber: "jadwal", id: "j-existing", tanggal: "2026-11-17", program: "Dialog Pagi",
+        sumber: "jadwal", id: "j-existing", tanggal: "2026-11-17", program: "Dialog Pagi", program_id: "prog-2",
       }]])
+      .mockResolvedValueOnce([[{ aturan_jeda: "semua_program" }]])
       .mockResolvedValueOnce([[
         { key: "waiting_period_value", value: "5" },
         { key: "waiting_period_unit", value: "day" },
@@ -176,14 +205,14 @@ describe("PATCH /api/change-requests/[id]", () => {
 
     expect(response.status).toBe(409);
     expect(body.message).toContain("17 November 2026");
-    expect(String(mocks.connectionQuery.mock.calls[3][0])).toContain("DATE_FORMAT(tanggal, '%Y-%m-%d')");
+    expect(String(mocks.connectionQuery.mock.calls[4][0])).toContain("DATE_FORMAT(tanggal, '%Y-%m-%d')");
     expect(mocks.connectionQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO jadwal_siaran"))).toBe(false);
     expect(mocks.rollback).toHaveBeenCalledOnce();
   });
 
   it("rejects approval of an edit that moves a schedule into a conflict", async () => {
     const oldData = {
-      narasumberId: "n-1", tanggal: "2026-11-13", waktu: "09:00", program: "Dialog Siang",
+      narasumberId: "n-1", tanggal: "2026-11-13", waktu: "09:00", program: "Dialog Siang", programId: "prog-1",
       jenisSiaran: "live", topik: "", catatan: "", status: "dijadwalkan", tanggalBaru: "",
     };
     mocks.connectionQuery
@@ -193,12 +222,14 @@ describe("PATCH /api/change-requests/[id]", () => {
       }]])
       .mockResolvedValueOnce([[{
         narasumber_id: "n-1", tanggal_iso: "2026-11-13", tanggal: "2026-11-13", waktu: "09:00",
-        program: "Dialog Siang", jenis_siaran: "live", topik: "", catatan: null, status: "dijadwalkan", tanggal_baru: null,
+        program: "Dialog Siang", program_id: "prog-1", jenis_siaran: "live", topik: "", catatan: null, status: "dijadwalkan", tanggal_baru: null,
       }]])
+      .mockResolvedValueOnce([[{ id: "prog-1", nama: "Dialog Siang", aktif: 1 }]])
       .mockResolvedValueOnce([[{ id: "n-1", last_appearance: null }]])
       .mockResolvedValueOnce([[{
-        sumber: "jadwal", id: "j-other", tanggal: "2026-11-17", program: "Dialog Pagi",
+        sumber: "jadwal", id: "j-other", tanggal: "2026-11-17", program: "Dialog Pagi", program_id: "prog-2",
       }]])
+      .mockResolvedValueOnce([[{ aturan_jeda: "semua_program" }]])
       .mockResolvedValueOnce([[
         { key: "waiting_period_value", value: "5" },
         { key: "waiting_period_unit", value: "day" },

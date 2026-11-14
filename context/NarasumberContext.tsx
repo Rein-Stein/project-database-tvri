@@ -7,6 +7,7 @@ import type {
   JadwalStatus,
   LogAktivitas,
   Narasumber,
+  ProgramSiaran,
   RiwayatSiaran,
 } from "../types";
 import { getCurrentWaitingPeriodSetting, getLastAppearance, isJadwalSelesai, setClientWaitingPeriod, type WaitingPeriodSetting } from "../types";
@@ -15,10 +16,14 @@ import { loadDatabaseSnapshot, syncDatabaseSnapshot } from "@/lib/database";
 interface NarasumberContextValue {
   narasumberList: Narasumber[];
   jadwalList: JadwalSiaran[];
+  programList: ProgramSiaran[];
   logList: LogAktivitas[];
   databaseStatus: "loading" | "ready" | "fallback" | "error";
   addNarasumber: (data: Omit<Narasumber, "id" | "riwayat" | "lastAppearance">) => Narasumber;
   updateNarasumber: (id: string, patch: Partial<Narasumber>) => void;
+  addProgram: (nama: string) => Promise<ProgramSiaran>;
+  renameProgram: (id: string, nama: string) => Promise<void>;
+  setProgramAktif: (id: string, aktif: boolean) => Promise<void>;
   removeNarasumber: (id: string) => void;
   /** Catat bahwa narasumber BENAR-BENAR sudah mengikuti siaran → buat riwayat baru + hitung ulang rotasi */
   catatSiaran: (id: string, data: Omit<RiwayatSiaran, "id">) => void;
@@ -41,6 +46,27 @@ const NarasumberContext = createContext<NarasumberContextValue | null>(null);
 const STORAGE_KEY = "tvri-kaltim-narasumber";
 const JADWAL_KEY = "tvri-kaltim-jadwal";
 const LOG_KEY = "tvri-kaltim-log";
+
+function isProgramSiaran(value: unknown): value is ProgramSiaran {
+  if (!value || typeof value !== "object") return false;
+  const program = value as Record<string, unknown>;
+  return typeof program.id === "string" && typeof program.nama === "string" && typeof program.aktif === "boolean";
+}
+
+async function saveProgram(method: "POST" | "PATCH", body: Record<string, unknown>): Promise<ProgramSiaran> {
+  const response = await fetch("/api/programs", {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload: unknown = await response.json();
+  const result = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  if (!response.ok) {
+    throw new Error(typeof result.message === "string" ? result.message : "Perubahan program gagal disimpan.");
+  }
+  if (!isProgramSiaran(result.program)) throw new Error("Respons program dari server tidak valid.");
+  return result.program;
+}
 
 const SEED_NARASUMBER: Narasumber[] = [
   {
@@ -230,6 +256,7 @@ function load<T>(key: string, fallback: T): T {
 export function NarasumberProvider({ children }: { children: ReactNode }) {
   const [list, setList] = useState<Narasumber[]>([]);
   const [jadwalList, setJadwalList] = useState<JadwalSiaran[]>([]);
+  const [programList, setProgramList] = useState<ProgramSiaran[]>([]);
   const [logList, setLogList] = useState<LogAktivitas[]>([]);
   const [actor, setActor] = useState("Admin");
   const [databaseReady, setDatabaseReady] = useState(false);
@@ -303,6 +330,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
                   tanggal: jadwal.tanggal,
                   waktu: jadwal.waktu,
                   program: jadwal.program,
+                  programId: jadwal.programId,
                   jenisSiaran: jadwal.jenisSiaran ?? "live",
                   topik: jadwal.topik,
                   catatan: jadwal.catatan,
@@ -328,11 +356,28 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const initialize = async () => {
+      const programsPromise = fetch("/api/programs", { cache: "no-store" }).then(async (response) => {
+        if (response.status === 401) return [];
+        if (!response.ok) throw new Error("Daftar program tidak dapat dimuat.");
+        const payload: unknown = await response.json();
+        if (!payload || typeof payload !== "object" || !Array.isArray((payload as Record<string, unknown>).programs)) {
+          throw new Error("Respons daftar program dari server tidak valid.");
+        }
+        const programs: unknown[] = (payload as { programs: unknown[] }).programs;
+        if (!programs.every(isProgramSiaran)) throw new Error("Data program dari server tidak valid.");
+        return programs;
+      }).catch((error) => {
+        console.error("Daftar program tidak dapat dimuat:", error);
+        return [];
+      });
       try {
         const snapshot = await loadDatabaseSnapshot();
         if (cancelled || !snapshot) throw new Error("Snapshot database kosong.");
+        const programs = await programsPromise;
+        if (cancelled) return;
         setList(recompute(snapshot.narasumber));
         setJadwalList(snapshot.jadwal.map((j) => ({ ...j, jenisSiaran: j.jenisSiaran ?? "live" })));
+        setProgramList(programs);
         setLogList(snapshot.log);
         setDatabaseReady(true);
         setDatabaseStatus("ready");
@@ -342,6 +387,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
         console.error("Database tidak dapat dimuat:", error);
         setDatabaseReady(false);
         setDatabaseStatus(process.env.NODE_ENV === "development" ? "fallback" : "error");
+        setProgramList([]);
 
         if (process.env.NODE_ENV === "development") {
           const loadedNarasumber = migrate(load<Narasumber[]>(STORAGE_KEY, []));
@@ -408,7 +454,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
     [actor]
   );
   const addNarasumber: NarasumberContextValue["addNarasumber"] = useCallback((data) => {
-    const baru: Narasumber = { ...data, id: `n${Date.now()}`, lastAppearance: null, riwayat: [] };
+    const baru: Narasumber = { ...data, aturanJeda: data.aturanJeda ?? "semua_program", id: `n${Date.now()}`, lastAppearance: null, riwayat: [] };
     setList((prev) => {
       const next = recompute([...prev, baru]);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -419,10 +465,45 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
 
   const updateNarasumber: NarasumberContextValue["updateNarasumber"] = useCallback((id, patch) => {
     setList((prev) => {
-      const next = recompute(prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+      const next = recompute(prev.map((n) => (n.id === id ? {
+        ...n,
+        ...patch,
+        aturanJeda: patch.aturanJeda ?? n.aturanJeda ?? "semua_program",
+      } : n)));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const addProgram: NarasumberContextValue["addProgram"] = useCallback(async (nama) => {
+    const program = await saveProgram("POST", { nama });
+    setProgramList((prev) => [...prev, program].sort((a, b) => a.nama.localeCompare(b.nama, "id")));
+    return program;
+  }, []);
+
+  const renameProgram: NarasumberContextValue["renameProgram"] = useCallback(async (id, nama) => {
+    const program = await saveProgram("PATCH", { id, nama });
+    setProgramList((prev) => prev.map((item) => item.id === id ? program : item).sort((a, b) => a.nama.localeCompare(b.nama, "id")));
+    setJadwalList((prev) => {
+      const next = prev.map((jadwal) => jadwal.programId === id ? { ...jadwal, program: program.nama } : jadwal);
+      localStorage.setItem(JADWAL_KEY, JSON.stringify(next));
+      return next;
+    });
+    setList((prev) => {
+      const next = prev.map((narasumber) => ({
+        ...narasumber,
+        riwayat: narasumber.riwayat.map((riwayat) =>
+          riwayat.programId === id ? { ...riwayat, program: program.nama } : riwayat
+        ),
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setProgramAktif: NarasumberContextValue["setProgramAktif"] = useCallback(async (id, aktif) => {
+    const program = await saveProgram("PATCH", { id, aktif });
+    setProgramList((prev) => prev.map((item) => item.id === id ? program : item).sort((a, b) => a.nama.localeCompare(b.nama, "id")));
   }, []);
 
   const removeNarasumber: NarasumberContextValue["removeNarasumber"] = useCallback((id) => {
@@ -513,6 +594,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
                     tanggal: updated.tanggal,
                     waktu: updated.waktu,
                     program: updated.program,
+                    programId: updated.programId,
                     jenisSiaran: updated.jenisSiaran ?? "live",
                     topik: updated.topik,
                     catatan: updated.catatan,
@@ -583,6 +665,7 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
                       tanggal: target.tanggal,
                       waktu: target.waktu,
                       program: target.program,
+                      programId: target.programId,
                       jenisSiaran: target.jenisSiaran ?? "live",
                       topik: target.topik,
                       catatan: target.catatan,
@@ -623,10 +706,14 @@ export function NarasumberProvider({ children }: { children: ReactNode }) {
     narasumberList: list,
     waitingPeriod,
     jadwalList,
+    programList,
     logList,
     databaseStatus,
     addNarasumber,
     updateNarasumber,
+    addProgram,
+    renameProgram,
+    setProgramAktif,
     removeNarasumber,
     catatSiaran,
     updateRiwayat,

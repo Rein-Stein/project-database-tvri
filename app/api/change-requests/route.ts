@@ -100,6 +100,7 @@ function normalizeJadwal(value: unknown): JadwalChangeData | null {
   if (!value || typeof value !== "object") return null;
   const data = value as Record<string, unknown>;
   if (typeof data.narasumberId !== "string" || typeof data.tanggal !== "string" || typeof data.program !== "string") return null;
+  if (typeof data.programId !== "string" || !data.programId.trim()) return null;
   if (!data.narasumberId.trim() || !isValidDate(data.tanggal.trim()) || !data.program.trim()) return null;
   const status = data.status;
   const jenisSiaran = data.jenisSiaran;
@@ -113,6 +114,7 @@ function normalizeJadwal(value: unknown): JadwalChangeData | null {
     tanggal: data.tanggal.trim(),
     waktu: String(data.waktu ?? "").trim(),
     program: data.program.trim(),
+    programId: data.programId.trim(),
     jenisSiaran,
     topik: String(data.topik ?? "").trim(),
     catatan: String(data.catatan ?? "").trim(),
@@ -186,6 +188,17 @@ export async function POST(request: Request) {
         await connection.rollback();
         return NextResponse.json({ ok: false, message: "Data jadwal tidak valid." }, { status: 400 });
       }
+      const [programRows] = await connection.query<RowDataPacket[]>(
+        "SELECT id, nama, aktif FROM program_siaran WHERE id = ? FOR UPDATE",
+        [normalized.programId]
+      );
+      const selectedProgram = programRows[0];
+      if (!selectedProgram || Number(selectedProgram.aktif) !== 1) {
+        await connection.rollback();
+        return NextResponse.json({ ok: false, message: "Program tidak ditemukan atau sudah nonaktif." }, { status: 400 });
+      }
+      normalized.program = selectedProgram.nama;
+      normalized.programId = selectedProgram.id;
       const [people] = await connection.query<RowDataPacket[]>(
         "SELECT id, DATE_FORMAT(last_appearance, '%Y-%m-%d') AS last_appearance FROM narasumber WHERE id = ? FOR UPDATE",
         [normalized.narasumberId]
@@ -214,6 +227,7 @@ export async function POST(request: Request) {
         tanggal: current.tanggal_iso ?? dateString(current.tanggal),
         waktu: current.waktu ?? "",
         program: current.program,
+        programId: current.program_id ?? null,
         jenisSiaran: current.jenis_siaran ?? "live",
         topik: current.topik ?? "",
         catatan: current.catatan ?? "",
@@ -238,7 +252,9 @@ export async function POST(request: Request) {
         dataBaru.narasumberId,
         lastAppearanceForSchedule,
         dataBaru.tanggal,
-        isJadwalUpdate ? entityId : undefined
+        isJadwalUpdate ? entityId : undefined,
+        typeof dataBaru.programId === "string" ? dataBaru.programId : null,
+        typeof dataBaru.program === "string" ? dataBaru.program : null
       );
       if (conflictMessage) {
         await connection.rollback();

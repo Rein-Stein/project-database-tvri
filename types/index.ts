@@ -1,6 +1,13 @@
 export type UserRole = "admin" | "operator";
 
 export type ChangeRequestStatus = "pending" | "approved" | "rejected";
+export type AturanJeda = "semua_program" | "per_program";
+
+export interface ProgramSiaran {
+  id: string;
+  nama: string;
+  aktif: boolean;
+}
 
 export interface NarasumberChangeData {
   nama: string;
@@ -15,6 +22,7 @@ export interface JadwalChangeData {
   tanggal: string;
   waktu: string;
   program: string;
+  programId: string | null;
   jenisSiaran: JenisSiaran;
   topik: string;
   catatan: string;
@@ -111,6 +119,7 @@ export interface RiwayatSiaran {
   /** HH:mm, opsional */
   waktu?: string;
   program: string;
+  programId?: string | null;
   jenisSiaran?: JenisSiaran;
   topik?: string;
   catatan?: string;
@@ -126,6 +135,7 @@ export interface JadwalSiaran {
   /** HH:mm, opsional */
   waktu?: string;
   program: string;
+  programId?: string | null;
   jenisSiaran?: JenisSiaran;
   topik?: string;
   catatan?: string;
@@ -160,6 +170,7 @@ export interface Narasumber {
   riwayat: RiwayatSiaran[];
   phone?: string;
   jabatan?: string;
+  aturanJeda?: AturanJeda;
 }
 
 /** Fungsi pusat rotasi: terakhir tampil = tanggal siaran terbaru dari riwayat */
@@ -183,6 +194,7 @@ export interface Penampilan {
   tanggal: string;
   sumber: "riwayat" | "jadwal";
   program?: string;
+  programId?: string | null;
 }
 
 export interface RotationConflict {
@@ -190,6 +202,9 @@ export interface RotationConflict {
   arah: "sesudah" | "sebelum";
   bolehMulai: string;
   bolehSampai?: string;
+  tanggalDipilih?: string;
+  aturanJeda?: AturanJeda;
+  programNama?: string | null;
 }
 
 export function toIsoDate(date: Date): string {
@@ -198,15 +213,20 @@ export function toIsoDate(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+export function normalizeProgramName(nama: string): string {
+  return nama.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export function collectPenampilan(
   narasumber: Pick<Narasumber, "id" | "riwayat" | "lastAppearance">,
-  jadwalList: Pick<JadwalSiaran, "id" | "narasumberId" | "tanggal" | "program" | "status">[]
+  jadwalList: Pick<JadwalSiaran, "id" | "narasumberId" | "tanggal" | "program" | "programId" | "status">[]
 ): Penampilan[] {
   const penampilan: Penampilan[] = (narasumber.riwayat || []).map((riwayat) => ({
     id: riwayat.id,
     tanggal: riwayat.tanggal.slice(0, 10),
     sumber: "riwayat",
     program: riwayat.program,
+    programId: riwayat.programId,
   }));
   if (penampilan.length === 0 && narasumber.lastAppearance) {
     penampilan.push({
@@ -222,6 +242,7 @@ export function collectPenampilan(
         tanggal: jadwal.tanggal.slice(0, 10),
         sumber: "jadwal",
         program: jadwal.program,
+        programId: jadwal.programId,
       });
     }
   }
@@ -232,7 +253,8 @@ export function findRotationConflict(
   tanggal: string,
   penampilan: Penampilan[],
   setting: WaitingPeriodSetting | undefined = undefined,
-  excludeIds: string[] = []
+  excludeIds: string[] = [],
+  opsi?: { aturanJeda?: AturanJeda; programId?: string | null; programNama?: string | null }
 ): RotationConflict | null {
   const { value, unit } = normalizeWaitingPeriod(setting ?? getCurrentWaitingPeriodSetting());
   const target = tanggal.slice(0, 10);
@@ -244,6 +266,12 @@ export function findRotationConflict(
 
   for (const item of penampilan) {
     if (excludeIds.includes(item.id)) continue;
+    if (opsi?.aturanJeda === "per_program") {
+      const samaProgram = opsi.programId && item.programId
+        ? opsi.programId === item.programId
+        : normalizeProgramName(opsi.programNama ?? "") === normalizeProgramName(item.program ?? "");
+      if (!samaProgram) continue;
+    }
     const otherDate = item.tanggal.slice(0, 10);
     const otherEnd = toIsoDate(addCalendarOffset(otherDate, value, unit));
     if (target < otherEnd && otherDate < targetEnd) {
@@ -258,7 +286,10 @@ export function findRotationConflict(
   if (!nearest) return null;
   const otherDate = nearest.tanggal.slice(0, 10);
   const bolehMulai = toIsoDate(addCalendarOffset(otherDate, value, unit));
-  if (otherDate <= target) return { penampilan: nearest, arah: "sesudah", bolehMulai };
+  const conflictOptions = opsi?.aturanJeda === "per_program"
+    ? { tanggalDipilih: target, aturanJeda: opsi.aturanJeda, programNama: opsi.programNama }
+    : {};
+  if (otherDate <= target) return { penampilan: nearest, arah: "sesudah", bolehMulai, ...conflictOptions };
 
   let bolehSampaiDate = addCalendarOffset(otherDate, -value, unit);
   while (toIsoDate(addCalendarOffset(toIsoDate(bolehSampaiDate), value, unit)) > otherDate) {
@@ -278,15 +309,28 @@ export function findRotationConflict(
     arah: "sebelum",
     bolehMulai,
     bolehSampai: toIsoDate(bolehSampaiDate),
+    ...conflictOptions,
   };
 }
 
 export function describeRotationConflict(
   conflict: RotationConflict,
-  setting: WaitingPeriodSetting | undefined = undefined
+  setting: WaitingPeriodSetting | undefined = undefined,
+  namaNarasumber?: string
 ): string {
   const normalized = normalizeWaitingPeriod(setting ?? getCurrentWaitingPeriodSetting());
   const item = conflict.penampilan;
+  if (conflict.aturanJeda === "per_program") {
+    const narasumber = namaNarasumber || "Narasumber ini";
+    const program = conflict.programNama ?? item.program ?? "tanpa program";
+    if (conflict.arah === "sesudah") {
+      const selectedDate = new Date(`${conflict.tanggalDipilih}T00:00:00`);
+      const returnDate = new Date(`${conflict.bolehMulai}T00:00:00`);
+      const daysRemaining = Math.max(0, Math.round((returnDate.getTime() - selectedDate.getTime()) / 86400000));
+      return `${narasumber} sedang dalam masa tunggu untuk program ${program}, ${daysRemaining} hari lagi (boleh kembali ${formatDate(conflict.bolehMulai)}). Silakan pilih program lain, atau pilih tanggal mulai ${formatDate(conflict.bolehMulai)}.`;
+    }
+    return `${narasumber} memiliki jadwal untuk program ${program} pada ${formatDate(item.tanggal)}, terlalu dekat dengan tanggal yang dipilih. Pilih tanggal paling lambat ${formatDate(conflict.bolehSampai ?? null)} atau program lain.`;
+  }
   const source = item.sumber === "jadwal" ? "sudah dijadwalkan" : "pernah tampil";
   const program = item.program ? ` (${item.program})` : "";
   const period = formatWaitingPeriod(normalized);

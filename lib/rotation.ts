@@ -5,6 +5,7 @@ import {
   findRotationConflict,
   normalizeWaitingPeriod,
   type RiwayatSiaran,
+  type AturanJeda,
   type WaitingPeriodSetting,
 } from "@/types";
 
@@ -13,6 +14,11 @@ interface AppearanceRow extends RowDataPacket {
   id: string;
   tanggal: string;
   program: string | null;
+  program_id: string | null;
+}
+
+interface NarasumberRuleRow extends RowDataPacket {
+  aturan_jeda: AturanJeda | null;
 }
 
 interface SettingRow extends RowDataPacket {
@@ -25,15 +31,21 @@ export async function findDatabaseRotationConflict(
   narasumberId: string,
   lastAppearance: string | null,
   tanggal: string,
-  excludeScheduleId?: string
+  excludeScheduleId?: string,
+  programId?: string | null,
+  programNama?: string | null
 ): Promise<string | null> {
   const [rows] = await connection.query<AppearanceRow[]>(
-    `SELECT 'riwayat' AS sumber, id, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal, program
+    `SELECT 'riwayat' AS sumber, id, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal, program, program_id
      FROM riwayat_siaran WHERE narasumber_id = ?
      UNION ALL
-     SELECT 'jadwal' AS sumber, id, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal, program
+     SELECT 'jadwal' AS sumber, id, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal, program, program_id
      FROM jadwal_siaran WHERE narasumber_id = ? AND status = 'dijadwalkan'`,
     [narasumberId, narasumberId]
+  );
+  const [narasumberRows] = await connection.query<NarasumberRuleRow[]>(
+    "SELECT aturan_jeda FROM narasumber WHERE id = ?",
+    [narasumberId]
   );
   const [settingRows] = await connection.query<SettingRow[]>(
     "SELECT `key`, `value` FROM settings WHERE `key` IN (?, ?)",
@@ -51,6 +63,7 @@ export async function findDatabaseRotationConflict(
       id: row.id,
       tanggal: row.tanggal,
       program: row.program ?? "",
+      programId: row.program_id,
     }));
   const schedules = rows
     .filter((row) => row.sumber === "jadwal")
@@ -59,6 +72,7 @@ export async function findDatabaseRotationConflict(
       narasumberId,
       tanggal: row.tanggal,
       program: row.program ?? "",
+      programId: row.program_id,
       status: "dijadwalkan" as const,
     }));
   const appearances = collectPenampilan(
@@ -66,6 +80,11 @@ export async function findDatabaseRotationConflict(
     schedules
   );
   const excludeIds = excludeScheduleId ? [`jadwal-${excludeScheduleId}`] : [];
-  const conflict = findRotationConflict(tanggal, appearances, setting, excludeIds);
+  const aturanJeda: AturanJeda = narasumberRows[0]?.aturan_jeda === "per_program" ? "per_program" : "semua_program";
+  const conflict = findRotationConflict(tanggal, appearances, setting, excludeIds, {
+    aturanJeda,
+    programId,
+    programNama,
+  });
   return conflict ? describeRotationConflict(conflict, setting) : null;
 }

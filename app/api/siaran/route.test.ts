@@ -66,6 +66,7 @@ describe("POST /api/siaran", () => {
     expect(mocks.query.mock.calls[2][1][0]).toBe("jadwal-j-1");
     expect(mocks.query.mock.calls[2][1][3]).toBe("09:00");
     expect(mocks.query.mock.calls[2][1][4]).toBe("Dialog Pagi");
+    expect(mocks.query.mock.calls[2][1][5]).toBeNull();
     expect(mocks.commit).toHaveBeenCalledOnce();
   });
 

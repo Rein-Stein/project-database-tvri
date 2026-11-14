@@ -141,14 +141,19 @@ function JadwalContent() {
       tanggal,
       collectPenampilan(narasumber, jadwalList),
       undefined,
-      [`jadwal-${jadwal.id}`]
+      [`jadwal-${jadwal.id}`],
+      {
+        aturanJeda: narasumber.aturanJeda,
+        programId: jadwal.programId,
+        programNama: jadwal.program,
+      }
     );
     if (conflict && !alasan?.trim()) {
       setOverrideAction({
         id: jadwalId,
         action,
         tanggal,
-        message: describeRotationConflict(conflict),
+        message: describeRotationConflict(conflict, undefined, narasumber.nama),
         alasan: "",
       });
       return;
