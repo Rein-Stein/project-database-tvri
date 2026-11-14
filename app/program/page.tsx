@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { useNarasumber } from "@/context/NarasumberContext";
 import { formatDate } from "@/types";
-import { cn, escapeCsvCell } from "@/lib/utils";
+import { buildCsv, cn, downloadCsv } from "@/lib/utils";
 import { DatabaseStatus } from "@/components/DatabaseStatus";
 
 interface ProgramStat {
@@ -170,20 +170,9 @@ export default function ProgramPage() {
   }, [programStats, donutData]);
 
   const handleExport = () => {
-    const header = "Program,Total Siaran,Total Narasumber,Narasumber Berulang,Terakhir Siaran\n";
-    const rows = filtered.map((p) =>
-      [p.program, p.totalSiaran, p.totalNarasumber, p.narasumberBerulang, formatDate(p.terakhir)]
-        .map(escapeCsvCell)
-        .join(",")
-    );
-    const csv = header + rows.join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "laporan-program-tvri.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    const header = ["Program", "Total Siaran", "Total Narasumber", "Narasumber Berulang", "Terakhir Siaran"];
+    const rows = filtered.map((p) => [p.program, p.totalSiaran, p.totalNarasumber, p.narasumberBerulang, formatDate(p.terakhir)]);
+    downloadCsv("laporan-program-tvri.csv", buildCsv(header, rows));
   };
 
   return (

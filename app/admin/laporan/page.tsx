@@ -6,7 +6,7 @@ import { useNarasumber } from "@/context/NarasumberContext";
 import { formatDate, getLastAppearance, getNarasumberStatus, JENIS_SIARAN_LABEL, toIsoDate } from "@/types";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminSubNav, StatCard } from "@/components/admin/AdminUI";
-import { cn, escapeCsvCell } from "@/lib/utils";
+import { buildCsv, cn, csvText, downloadCsv } from "@/lib/utils";
 
 type Periode = "bulan_ini" | "tiga_bulan" | "enam_bulan" | "tahun_ini" | "semua";
 
@@ -81,40 +81,29 @@ function LaporanContent() {
   const maxInstansi = Math.max(1, ...topInstansi.map((x) => x[1]));
 
   const handleExportCSV = () => {
-    const header = "Nama,Instansi,Jabatan,Bidang,Tanggal Siaran,Program,Topik,Jenis Siaran\n";
-    const rows = riwayatFiltered.map((r) =>
-      [r.narasumber.nama, r.narasumber.instansi, r.narasumber.jabatan ?? "", r.narasumber.bidang, formatDate(r.tanggal), r.program, r.topik ?? "", JENIS_SIARAN_LABEL[r.jenisSiaran ?? "live"]]
-        .map(escapeCsvCell)
-        .join(",")
-    );
-    const csv = header + rows.join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `laporan-narasumber-tvri-${periode}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const header = ["Nama", "Instansi", "Jabatan", "Bidang", "Tanggal Siaran", "Program", "Topik", "Jenis Siaran"];
+    const rows = riwayatFiltered.map((r) => [
+      r.narasumber.nama,
+      r.narasumber.instansi,
+      r.narasumber.jabatan ?? "",
+      r.narasumber.bidang,
+      formatDate(r.tanggal),
+      r.program,
+      r.topik ?? "",
+      JENIS_SIARAN_LABEL[r.jenisSiaran ?? "live"],
+    ]);
+    downloadCsv(`laporan-narasumber-tvri-${periode}.csv`, buildCsv(header, rows));
   };
 
   const handleExportDaftar = () => {
-    const header = "Nama,Instansi,Jabatan,Bidang,Kontak,Total Siaran,Terakhir Tampil,Status\n";
+    const header = ["Nama", "Instansi", "Jabatan", "Bidang", "Kontak", "Total Siaran", "Terakhir Tampil", "Status"];
     const rows = narasumberList.map((n) => {
       const last = getLastAppearance(n, jadwalList);
       const st = getNarasumberStatus(last);
       const stLabel = st === "tersedia" ? "Boleh Diundang" : st === "dalam-jeda" ? "Dalam Masa Tunggu" : "Belum Pernah Tampil";
-      return [n.nama, n.instansi, n.jabatan ?? "", n.bidang, n.phone ?? "", n.riwayat?.length ?? 0, formatDate(last), stLabel]
-        .map(escapeCsvCell)
-        .join(",");
+      return [n.nama, n.instansi, n.jabatan ?? "", n.bidang, csvText(n.phone ?? ""), n.riwayat?.length ?? 0, formatDate(last), stLabel];
     });
-    const csv = header + rows.join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "daftar-narasumber-tvri.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("daftar-narasumber-tvri.csv", buildCsv(header, rows));
   };
 
   const periodeLabel = periode === "semua" ? "Semua" : periode.replace("_", " ");
